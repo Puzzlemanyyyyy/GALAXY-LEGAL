@@ -1,0 +1,1 @@
+"""Galaxy Legal services package."""
