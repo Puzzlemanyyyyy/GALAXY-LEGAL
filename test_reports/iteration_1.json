@@ -1,0 +1,56 @@
+{
+  "summary": "Iteration 1 — full e2e testing of Galaxy Legal (backend + frontend). 24/24 backend pytest tests pass (9 existing unit + 15 new e2e). Anti-fantasma citation validation verified end-to-end: every evidence.quote_excerpt was a case-insensitive whitespace-normalized substring of source texto_extraido and verified=true. Frontend auth, dashboard, case page, tab navigation all work. Two minor frontend issues found: (1) workflow-card-initial_analysis data-testid missing, (2) rendering bug shows literal '${0.0169}' in runs-list cost.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "CasePage runs-list cost",
+        "issue": "Broken template literal at CasePage.jsx:160 renders cost as literal string '${0.0169}' instead of '$0.0169'. The source reads `· ${'{'}{Number(r.cost_usd || 0).toFixed(4)}{'}'}` which produces '${N}' as text.",
+        "selector": "[data-testid^='run-row-'] (inside runs-list)",
+        "priority": "MEDIUM"
+      },
+      {
+        "component": "CasePage workflow card",
+        "issue": "Expected data-testid='workflow-card-initial_analysis' is not present on the workflow card element. The card IS rendered ('Análisis inicial' + Ejecutar button), but the testid hook required by the spec / tests is missing. Add `data-testid={`workflow-card-${w.workflow_type}`}` on the card root.",
+        "selector": "workflow-card-initial_analysis",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_e2e_flow.py",
+    "/app/backend/tests/test_chunker.py",
+    "/app/backend/tests/test_citation_validator.py",
+    "/app/test_reports/pytest/iteration_1_results.xml"
+  ],
+  "action_items": [
+    "Fix CasePage.jsx:160 cost template literal so it renders `$0.0169` not `${0.0169}`. Replace `· ${'{'}{Number(r.cost_usd || 0).toFixed(4)}{'}'}` with `· ${'$'}{Number(r.cost_usd || 0).toFixed(4)}` or simply `· $${Number(r.cost_usd || 0).toFixed(4)}`.",
+    "Add data-testid='workflow-card-<workflow_type>' on each workflow card in CasePage.jsx to match the spec/test selector.",
+    "Config gap (not a code bug): if magic-link redirect ever fails from the preview URL, ensure Supabase Dashboard → Auth → URL Configuration includes the preview URL in Redirect URLs."
+  ],
+  "critical_code_review_comments": [
+    "runs.py workflow version auto-increment is not transactional — if two runs complete concurrently for the same (case, tipo_documento) both may read the same max version and then hit the unique constraint. Consider wrapping in a Postgres function / upsert-with-retry.",
+    "documents.py _index_in_background catches all exceptions but only records error in metadata.index_error; there is no UI signal (status column is computed from indexed_at/metadata only). The current mapper correctly derives status='error' when metadata.index_error is set — OK.",
+    "CasePage.jsx line 208 still references legacy status 'succeeded' alongside 'completed' in the OK counter; code comment says live schema uses 'completed'. Minor inconsistency — harmless but delete 'succeeded' branch.",
+    "drafts.py approve blocks parent_draft_id!=null as an anti-fantasma safeguard. Good. Consider returning 422 instead of 400 since the request is semantically well-formed but state-rejected.",
+    "Frontend uses VITE_API_BASE_URL directly; REACT_APP_BACKEND_URL in /app/frontend/.env points at a DIFFERENT host (magic-link-preview). It is unused by Vite (VITE_ prefix required). Recommend removing or aligning REACT_APP_BACKEND_URL to avoid confusion for future agents."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_e2e_flow.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100%",
+    "frontend": "90%"
+  },
+  "test_credentials": "e2e-test@galaxylegal.dev / GalaxyLegal_e2e_2026! (Supabase password grant). Documented in /app/memory/test_credentials.md.",
+  "seed_data_creation": "Created 1 new test case per run (TEST_Reclamación ACME — e2e run <hex>) and uploaded 1 text document (contrato_test.txt) per run; ran 1 initial_analysis workflow (cost ~$0.017). Previous smoke-test case still present (total 3 cases visible in dashboard).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend e2e file /app/backend/tests/test_e2e_flow.py is the regression suite (15 tests). It creates a new case + doc + run on every full run (~$0.01-$0.02 OpenAI cost per run); to avoid cost, run only backend subset: `pytest tests/ -q -k 'not TestFullFlow'` for the free 9 unit tests. Frontend session injection works via localStorage key sb-irzervhlczzzrydqfisn-auth-token after calling Supabase password grant. Auth hydration takes ~1-2s so wait on user-email textContent being non-empty before asserting cases-list.",
+  "rca of the issue": "CasePage.jsx line 160 bug: the author attempted to escape curly braces in JSX, producing `· ${'{'}{Number(r.cost_usd || 0).toFixed(4)}{'}'}`. JSX evaluates each `{...}` expression: first yields the literal string '{', then the number, then '}'. Result: visible text '${0.0169}'. Correct intent is a dollar sign prefix: `· $${Number(r.cost_usd || 0).toFixed(4)}` (the first '$' is literal JSX text, the second starts the template interpolation — or just use string concat). Reproduction: open any case with a completed run; look at the EJECUCIONES panel (right column). Mitigation: straightforward string fix — see action_items."
+}

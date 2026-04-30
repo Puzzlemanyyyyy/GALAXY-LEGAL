@@ -42,7 +42,7 @@ class WorkflowStep:
 
 @dataclass
 class WorkflowResult:
-    status: str                      # 'succeeded' | 'failed' | 'needs_human'
+    status: str                      # 'completed' | 'failed' | 'needs_human' (matches DB enum run_status)
     output: dict
     evidences: list[dict]            # ready to insert into evidences table
     draft: dict | None               # ready to insert into drafts table (None if needs_human)
@@ -116,10 +116,10 @@ class Workflow:
                         )
             outputs[step.name] = payload
 
-            # Persist incremental progress.
+            # Persist incremental progress. The live schema lacks a
+            # ``current_step`` column, so we tuck it inside output_jsonb.
             admin.table("runs").update({
-                "current_step": step.name,
-                "output_jsonb": outputs,
+                "output_jsonb": {**outputs, "_current_step": step.name},
                 "tokens_input": total_usage.input_tokens,
                 "tokens_output": total_usage.output_tokens,
                 "cost_usd": total_usage.cost_usd,
@@ -131,9 +131,15 @@ class Workflow:
 
         # Validate citations against the documents' extracted text.
         documents_text = {d["id"]: (d.get("texto_extraido") or "") for d in documents}
+        # Normalise evidence dict keys: the LLM schemas expose ``id`` for the
+        # external evidence identifier (e001, e002...) while our DB/validator
+        # expect ``external_id``. Accept both for backwards compatibility.
+        def _ext_id(e: dict) -> str:
+            return e.get("external_id") or e.get("id") or ""
+
         evidence_inputs = [
             EvidenceInput(
-                external_id=e["external_id"],
+                external_id=_ext_id(e),
                 document_id=e["document_id"],
                 quote_excerpt=e["quote_excerpt"],
                 page=e.get("page"),
@@ -145,7 +151,8 @@ class Workflow:
 
         # Drop dangling [E:xxx] markers that point to evidence we can't verify.
         ref_ids = parse_evidence_markers(draft.get("content_md", ""))
-        unknown_markers = [r for r in ref_ids if r not in {e.external_id for e in evidence_inputs}]
+        known_ids = {e.external_id for e in evidence_inputs}
+        unknown_markers = [r for r in ref_ids if r not in known_ids]
 
         if not validation.valid or unknown_markers:
             err = []
@@ -164,7 +171,7 @@ class Workflow:
 
         evidences_payload = [
             {
-                "external_id": e["external_id"],
+                "external_id": _ext_id(e),
                 "claim_id": e.get("claim_id"),
                 "document_id": e["document_id"],
                 "page": e.get("page"),
@@ -176,7 +183,7 @@ class Workflow:
         ]
 
         return WorkflowResult(
-            status="succeeded",
+            status="completed",
             output=outputs,
             evidences=evidences_payload,
             draft={

@@ -159,7 +159,7 @@ export default function CasePage() {
                   <div className="text-xs text-ink-600 mt-1">
                     Paso: {r.current_step || '—'} · ${'{'}{Number(r.cost_usd || 0).toFixed(4)}{'}'}
                   </div>
-                  {r.status === 'succeeded' && (
+                  {(r.status === 'completed' || r.status === 'succeeded') && (
                     <button data-testid={`open-draft-${r.id}`} onClick={async () => {
                       try {
                         const d = await api.getRunDraft(r.id)
@@ -188,6 +188,7 @@ function RunStatus({ status }) {
   const map = {
     queued:      'text-ink-600',
     running:     'text-brand-700',
+    completed:   'text-emerald-700',
     succeeded:   'text-emerald-700',
     failed:      'text-rose-700',
     needs_human: 'text-amber-700',
@@ -204,7 +205,7 @@ function SummaryTab({ caseData, docs, runs, drafts }) {
       </div>
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Documentos" value={docs.length} sub={`${docs.filter((d) => d.status === 'ready').length} indexados`} />
-        <Stat label="Ejecuciones" value={runs.length} sub={`${runs.filter((r) => r.status === 'succeeded').length} OK`} />
+        <Stat label="Ejecuciones" value={runs.length} sub={`${runs.filter((r) => r.status === 'completed' || r.status === 'succeeded').length} OK`} />
         <Stat label="Borradores" value={drafts.length} sub={`${drafts.filter((d) => d.status === 'approved').length} aprobados`} />
       </div>
       <div className="rounded-lg bg-ink-50 border border-ink-200 p-4 text-sm text-ink-600">
@@ -248,10 +249,10 @@ function EvidencesTab({ runs }) {
   const [evidences, setEvidences] = useState([])
   const [picked, setPicked] = useState(null)
   useEffect(() => {
-    const success = runs.find((r) => r.status === 'succeeded')
-    if (!success) { setEvidences([]); setPicked(null); return }
-    setPicked(success.id)
-    api.getRunEvidences(success.id).then(setEvidences).catch(() => setEvidences([]))
+    const done = runs.find((r) => r.status === 'completed' || r.status === 'succeeded')
+    if (!done) { setEvidences([]); setPicked(null); return }
+    setPicked(done.id)
+    api.getRunEvidences(done.id).then(setEvidences).catch(() => setEvidences([]))
   }, [runs])
   if (!picked) return <div className="text-sm text-ink-600">Las evidencias aparecen tras una ejecución exitosa.</div>
   return (

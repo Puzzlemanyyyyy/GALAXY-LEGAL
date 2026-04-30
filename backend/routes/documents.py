@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
@@ -13,6 +14,7 @@ from services.auth import get_current_user
 from services.chunker import chunk_text
 from services.embeddings_pipeline import index_document
 from services.extractor import extract
+from services.mappers import doc_to_api, new_doc_row
 from services.supabase_client import get_supabase_admin, get_user_client
 
 
@@ -29,7 +31,7 @@ async def list_documents(case_id: str, user: dict = Depends(get_current_user)):
         .order("created_at", desc=True)
         .execute()
     )
-    return res.data
+    return [doc_to_api(r) for r in (res.data or [])]
 
 
 @router.get("/{document_id}")
@@ -38,7 +40,7 @@ async def get_document(document_id: str, user: dict = Depends(get_current_user))
     res = sb.table("case_documents").select("*").eq("id", document_id).single().execute()
     if not res.data:
         raise HTTPException(404, "Document not found")
-    return res.data
+    return doc_to_api(res.data)
 
 
 @router.post("/upload", status_code=201)
@@ -55,7 +57,6 @@ async def upload_document(
     digest = hashlib.sha256(raw).hexdigest()
 
     user_sb = get_user_client(user["token"])
-    # Dedupe: same case + same content hash → return existing.
     existing = (
         user_sb.table("case_documents")
         .select("*")
@@ -65,9 +66,8 @@ async def upload_document(
         .execute()
     )
     if existing.data:
-        return existing.data[0]
+        return doc_to_api(existing.data[0])
 
-    # Verify case ownership via RLS by fetching it once.
     case_row = user_sb.table("cases").select("id, owner_id").eq("id", case_id).single().execute()
     if not case_row.data:
         raise HTTPException(404, "Case not found or not owned")
@@ -85,47 +85,44 @@ async def upload_document(
 
     inserted = (
         admin.table("case_documents")
-        .insert({
-            "case_id": case_id,
-            "owner_id": user["id"],
-            "filename": file.filename or "document",
-            "storage_path": storage_name,
-            "mime_type": file.content_type,
-            "size_bytes": len(raw),
-            "hash_sha256": digest,
-            "source": "upload",
-            "status": "indexing",
-        })
+        .insert(new_doc_row(
+            case_id=case_id,
+            filename=file.filename,
+            storage_path=storage_name,
+            mime_type=file.content_type,
+            size_bytes=len(raw),
+            hash_sha256=digest,
+            source="upload",
+        ))
         .execute()
     )
     if not inserted.data:
         raise HTTPException(500, "Failed to register document")
-    doc = inserted.data[0]
+    doc_row = inserted.data[0]
 
     audit.log(
         actor_id=user["id"],
         action="document.upload",
         case_id=case_id,
         resource_type="document",
-        resource_id=doc["id"],
-        payload={"filename": doc["filename"], "size_bytes": doc["size_bytes"]},
+        resource_id=doc_row["id"],
+        payload={"filename": doc_row.get("nombre"), "size_bytes": doc_row.get("size_bytes")},
     )
 
-    # Async indexing — extract → chunk → embed → store.
-    background.add_task(_index_in_background, doc["id"], raw, file.content_type, file.filename)
-    return doc
+    background.add_task(_index_in_background, doc_row["id"], raw, file.content_type, file.filename)
+    return doc_to_api(doc_row)
 
 
 def _index_in_background(document_id: str, file_bytes: bytes, mime: Optional[str], filename: Optional[str]):
-    """Synchronous wrapper called by FastAPI's background tasks."""
     try:
         asyncio.run(_index_async(document_id, file_bytes, mime, filename))
     except Exception as exc:  # noqa: BLE001
         admin = get_supabase_admin()
-        admin.table("case_documents").update({
-            "status": "failed",
-            "index_error": str(exc)[:1000],
-        }).eq("id", document_id).execute()
+        # Merge error into metadata so we don't clobber source/etc.
+        current = admin.table("case_documents").select("metadata").eq("id", document_id).single().execute().data or {}
+        meta = dict(current.get("metadata") or {})
+        meta["index_error"] = str(exc)[:1000]
+        admin.table("case_documents").update({"metadata": meta}).eq("id", document_id).execute()
         print(f"[ingest] document {document_id} failed: {exc}")
 
 
@@ -146,9 +143,14 @@ async def reindex_document(document_id: str, background: BackgroundTasks, user: 
     if not file_bytes_resp:
         raise HTTPException(500, "Failed to download stored file")
     admin.table("document_chunks").delete().eq("document_id", document_id).execute()
-    admin.table("case_documents").update({"status": "indexing", "index_error": None}).eq("id", document_id).execute()
+
+    # Reset indexed_at and clear previous error.
+    meta = dict(doc.data.get("metadata") or {})
+    meta.pop("index_error", None)
+    admin.table("case_documents").update({"indexed_at": None, "metadata": meta}).eq("id", document_id).execute()
+
     background.add_task(
-        _index_in_background, document_id, bytes(file_bytes_resp), doc.data.get("mime_type"), doc.data.get("filename")
+        _index_in_background, document_id, bytes(file_bytes_resp), doc.data.get("mime_type"), doc.data.get("nombre")
     )
     audit.log(actor_id=user["id"], action="document.reindex", case_id=doc.data.get("case_id"), resource_type="document", resource_id=document_id)
     return {"status": "indexing"}
