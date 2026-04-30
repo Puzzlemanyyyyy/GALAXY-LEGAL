@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -15,6 +16,7 @@ from services.supabase_client import get_supabase_admin, get_user_client
 from services.workflows import REGISTRY, get_workflow
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -220,6 +222,12 @@ async def _run_workflow_async(run_id: str, case_id: str, workflow_type: str, own
             data = rpc.data
             draft_row = (data if isinstance(data, dict) else (data[0] if data else None))
         except Exception:
+            logger.warning(
+                "insert_draft_atomic RPC unavailable, falling back to max+1 "
+                "(non-atomic) for case_id=%s tipo=%s run_id=%s",
+                case_id, tipo, run_id,
+                exc_info=True,
+            )
             draft_row = None
         if draft_row is None:
             existing = (

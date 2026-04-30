@@ -86,8 +86,14 @@ def resolve_public_draft(token: str) -> Optional[dict]:
         if exp <= datetime.now(timezone.utc):
             return {"_expired": True, "token": token, "expires_at": expires_at}
 
-    draft_q = admin.table("drafts").select("*").eq("id", share["draft_id"]).single().execute()
-    if not draft_q.data:
+    draft_q = None
+    try:
+        draft_q = admin.table("drafts").select("*").eq("id", share["draft_id"]).single().execute()
+    except Exception as exc:
+        # Orphaned share (draft deleted) or RLS hiding the row: treat as not found.
+        print(f"[sharing] draft lookup failed for token={token} draft_id={share.get('draft_id')}: {exc}")
+        return None
+    if not draft_q or not draft_q.data:
         return None
     draft = draft_to_api(draft_q.data)
 
@@ -98,8 +104,14 @@ def resolve_public_draft(token: str) -> Optional[dict]:
         evs = [evidence_to_api(r) for r in (ev_q.data or [])]
 
     # Fetch minimal case info (title, jurisdiccion, materia) — no owner details.
-    case_q = admin.table("cases").select("id, title, jurisdiccion, materia").eq("id", draft_q.data["case_id"]).single().execute()
-    case = case_q.data or {}
+    case = {}
+    try:
+        case_q = admin.table("cases").select("id, title, jurisdiccion, materia").eq("id", draft_q.data["case_id"]).single().execute()
+        case = case_q.data or {}
+    except Exception as exc:
+        # Case missing or RLS-hidden: surface empty context rather than 500.
+        print(f"[sharing] case lookup failed for token={token} case_id={draft_q.data.get('case_id')}: {exc}")
+        case = {}
 
     # Best-effort view counter increment.
     try:

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Scale, ShieldCheck, AlertTriangle, Loader2 } from 'lucide-react'
 import { getPublicDraft } from '../lib/api'
@@ -8,6 +8,8 @@ export default function PublicDraftPage() {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [picked, setPicked] = useState(null)
+  const [highlighted, setHighlighted] = useState(null)
+  const evidenceRefs = useRef({})
 
   useEffect(() => {
     getPublicDraft(token)
@@ -21,6 +23,18 @@ export default function PublicDraftPage() {
     ;(data.evidences || []).forEach((e) => { m[e.external_id] = e })
     return m
   }, [data])
+
+  const focusEvidence = (id) => {
+    setPicked(id)
+    const el = evidenceRefs.current[id]
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    setHighlighted(id)
+    window.setTimeout(() => {
+      setHighlighted((cur) => (cur === id ? null : cur))
+    }, 1500)
+  }
 
   if (error) {
     return (
@@ -75,7 +89,7 @@ export default function PublicDraftPage() {
             </div>
           </div>
           <div data-testid="public-draft-body" className="rounded-xl border border-ink-200 bg-white p-8 font-serif text-ink-900 leading-relaxed whitespace-pre-wrap">
-            {renderWithMarkers(draft.content_md || '', evidenceMap, picked, setPicked)}
+            {renderWithMarkers(draft.content_md || '', evidenceMap, picked, focusEvidence)}
           </div>
         </article>
         <aside className="col-span-12 lg:col-span-4">
@@ -85,9 +99,17 @@ export default function PublicDraftPage() {
               {(data.evidences || []).map((e) => (
                 <li
                   key={e.external_id}
+                  ref={(el) => { if (el) evidenceRefs.current[e.external_id] = el }}
                   data-testid={`public-evidence-${e.external_id}`}
-                  className={`rounded-lg border p-3 text-sm bg-white transition ${picked === e.external_id ? 'border-brand-500 shadow-sm' : 'border-ink-200'}`}
-                  onClick={() => setPicked(e.external_id)}
+                  data-evidence-id={e.external_id}
+                  className={`rounded-lg border p-3 text-sm bg-white transition-all duration-300 cursor-pointer ${
+                    highlighted === e.external_id
+                      ? 'border-amber-400 shadow-lg ring-2 ring-amber-300 bg-amber-50'
+                      : picked === e.external_id
+                        ? 'border-brand-500 shadow-sm'
+                        : 'border-ink-200'
+                  }`}
+                  onClick={() => focusEvidence(e.external_id)}
                 >
                   <div className="text-xs uppercase tracking-wider text-ink-600">
                     {e.external_id} · pág. {e.page ?? '—'} · párr. {e.paragraph ?? '—'}
@@ -109,7 +131,7 @@ export default function PublicDraftPage() {
   )
 }
 
-function renderWithMarkers(text, evidenceMap, picked, setPicked) {
+function renderWithMarkers(text, evidenceMap, picked, onPick) {
   if (!text) return null
   const parts = text.split(/(\[E:[A-Za-z0-9_-]+\])/g)
   return parts.map((p, i) => {
@@ -122,8 +144,11 @@ function renderWithMarkers(text, evidenceMap, picked, setPicked) {
       <button
         key={i}
         type="button"
-        onClick={() => setPicked(id)}
-        className={`mx-0.5 px-1 py-0.5 rounded text-[10px] font-mono cursor-pointer ${
+        data-testid={`evidence-marker-${id}`}
+        data-evidence-id={id}
+        onClick={() => onPick(id)}
+        title={ev ? `pág. ${ev.page ?? '—'} · párr. ${ev.paragraph ?? '—'}` : id}
+        className={`mx-0.5 px-1 py-0.5 rounded text-[10px] font-mono cursor-pointer transition-colors ${
           picked === id
             ? 'bg-brand-600 text-white border border-brand-600'
             : ok

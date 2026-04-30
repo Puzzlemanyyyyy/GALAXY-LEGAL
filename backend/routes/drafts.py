@@ -1,6 +1,7 @@
 """Drafts: list, get, revise, approve, reject, export DOCX, share."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -20,6 +21,7 @@ from services.mappers import draft_to_api
 from services.supabase_client import get_supabase_admin, get_user_client
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -126,6 +128,12 @@ async def create_revision(draft_id: str, payload: RevisionPayload, user: dict = 
         data = rpc.data
         inserted = (data if isinstance(data, dict) else (data[0] if data else None))
     except Exception:
+        logger.warning(
+            "insert_draft_atomic RPC unavailable, falling back to max+1 "
+            "(non-atomic) for draft revision parent_draft_id=%s",
+            draft_id,
+            exc_info=True,
+        )
         inserted = None
     if inserted is None:
         existing = (

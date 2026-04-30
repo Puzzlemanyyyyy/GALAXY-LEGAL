@@ -76,6 +76,27 @@ AI-powered legal workspace para despachos y equipos in-house. Stack:
 
 ## Pendiente
 
+### 2026-04-30 · Fase 2(b) — E2E verificado + refinado (iteration_2.json + refix)
+Testing agent validó el suite de 6 puntos pedido por el usuario:
+- `civil_demand` E2E → demanda con 5 hechos numerados + [E:xxx] en cada uno + petitum + otrosíes, 5 evidencias `verified=true`, coste $0.0212.
+- DOCX export 39 044 B (Title×1, H1×1, H2×5, Bullets×9, Normal×27).
+- Budget guardrail (unit-level, `settings.OPENAI_MONTHLY_BUDGET_USD=0` → 402 + `over_budget=true` + restore a 50).
+- Race condition vía RPC `insert_draft_atomic` + `pg_advisory_xact_lock` → 5 versions únicas consecutivas sin huecos.
+- Sharing backend completo (create 201 → list → public GET ×3 → `view_count=3` en DB → revoke 204 → 404).
+- PublicDraftPage sin login: watermark, banner, panel 5 evidencias, NO dashboard chrome.
+
+**Refix (4 items P0/P1) aplicado tras el iteration_2**:
+- `services/mappers.py:draft_to_api` ahora expone `exported_at`. Verificado end-to-end: POST `/export-docx` → GET draft → campo no-null.
+- `routes/runs.py` + `routes/drafts.py::create_revision`: el catch del RPC `insert_draft_atomic` ahora emite `logger.warning(...)` con `exc_info=True` cuando cae al fallback max+1. Antes era silencioso.
+- `services/sharing.py::resolve_public_draft`: ambos `.single()` (draft y case) envueltos en try/except → 404 limpio si el draft está huérfano o RLS-hidden.
+- `PublicDraftPage.jsx`: markers `[E:xxx]` ahora son `<button data-testid="evidence-marker-exxx" data-evidence-id="exxx">` con onClick → `scrollIntoView({behavior:'smooth'})` + `ring-amber-300 bg-amber-50 border-amber-400` por 1.5s sobre la fila correspondiente del panel lateral. Verificado con screenshot (el panel `e001` sale outlineado en ámbar tras click).
+- Pytest backend 45/45 green tras los fixes. Lint JS limpio.
+
+**Link persistente 7d (NO revocar)** para review manual del usuario:
+`https://ba999ff0-b0a0-4c59-b346-fc3f4eaa7af6.preview.emergentagent.com/public/drafts/4a1d042b-9f35-4cc0-a98a-1cde263be263`
+
+## Pendiente
+
 ### P0 — Usuario debe aplicar SQL
 Aplicar `/app/supabase/0002_phase2b.sql` vía MCP o SQL Editor:
 - `shared_drafts` tabla + RLS policy.
@@ -83,6 +104,8 @@ Aplicar `/app/supabase/0002_phase2b.sql` vía MCP o SQL Editor:
 - `insert_draft_atomic(...)` RPC con advisory lock.
 
 Ninguna alteración sobre objetos existentes — solo add-only.
+
+**UPDATE 2026-04-30**: el usuario ya aplicó este SQL y confirmó que las 3 estructuras existen en su instancia. RPC `insert_draft_atomic` invocada correctamente en el test de race condition (5 inserts concurrentes). Status: **DONE**.
 
 ### P1 — Fase 2(c): Drive + producción
 - `components/DrivePicker.jsx` + `POST /api/drive/import`.

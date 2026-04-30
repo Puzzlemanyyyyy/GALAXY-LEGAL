@@ -163,6 +163,7 @@ def draft_to_api(row: dict[str, Any]) -> dict[str, Any]:
         "citations_valid": citations_valid,
         "approved_at": row.get("approved_at"),
         "approved_by": row.get("reviewer_id"),
+        "exported_at": row.get("exported_at"),
         "created_at": row.get("created_at"),
         "updated_at": row.get("updated_at"),
     }
