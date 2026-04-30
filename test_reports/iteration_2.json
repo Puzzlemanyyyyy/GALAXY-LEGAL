@@ -1,0 +1,70 @@
+{
+  "summary": "Phase 2(b) E2E validated end-to-end against live Supabase + real OpenAI on the preview URL. Backend pytest: 36/36 green (existing) + 9/9 new in test_phase2b_e2e.py. civil_demand workflow produced a complete Spanish demand (encabezamiento + 5 numbered hechos with [E:exxx] markers in every hecho + fundamentos + petitum + otrosíes), 5 evidences all verified=true with quote_excerpt verbatim-substring of source. DOCX export produced a valid 39 KB file with Title/Heading 1-2/Bullets/bold formatting and evidence ids (e001…e005) embedded as smaller grey runs (the [E:] brackets are stripped by design — see docx_exporter._EV_RE). Race-condition test_versioning passes via the insert_draft_atomic RPC (skip-marker proves the RPC exists; collision/gap assertions hold). Sharing E2E full flow OK (24h create → list → public GET ×3 → view_count=3 in DB → revoke → 404; invalid token → 404). Frontend PublicDraftPage loaded without auth, rendered title, watermark 'Galaxy Legal · Demo', banner 'Citas verificadas por Galaxy Legal', side panel with all 5 evidences (page/paragraph/quote/VERIFICADA), no dashboard chrome. Total OpenAI cost across the full suite: $0.0212 (well under the $0.30 sanity cap). Persistent 7-day share token for manual review included below.",
+  "persistent_share_url": "https://ba999ff0-b0a0-4c59-b346-fc3f4eaa7af6.preview.emergentagent.com/public/drafts/47b48943-d10d-487f-b63c-b53d80e39c88",
+  "test_credentials": "e2e-test@galaxylegal.dev / GalaxyLegal_e2e_2026! (Supabase password grant) — /app/memory/test_credentials.md",
+  "seed_data_creation": {
+    "case_ids": ["13ffe41f-9837-4a74-9190-acf7815f3923", "307e1b03-fd28-40ca-9743-5c8485ce2f48", "6a087990-7693-464d-b523-a073128ccbef", "0e775a10-eb63-49d7-9c0e-7a822baac437"],
+    "document_ids": ["84b54de2-2d8f-47ee-a05f-dbce72e420cf", "c36392e4-21c7-4e59-af81-8716e760fa38", "a0e91503-4da5-4af8-8f84-51231075df4f"],
+    "run_ids": ["d8584792-4f19-443a-a3d8-3c47982acbe6", "7c1eb1f2-55e1-4d38-8e06-bc1dbd557330", "3042c4af-13df-463f-8de8-a86e10f7f73a"],
+    "draft_ids": ["221e6e49-bb10-4ac8-8fbd-0cd8872726fd", "14fb12e0-6c7a-4186-8213-5388b21a5bca", "2194835c-591a-4218-a4de-469a99784665"],
+    "share_tokens": ["b7055205-87cb-4f79-bd5c-47d2ebbe8c19", "47b48943-d10d-487f-b63c-b53d80e39c88", "d6631a52-04ad-423b-ac70-5ed52027c482", "e59d85a4-9e6f-4a21-b020-c28cceeeafc2", "b4eb1712-fe58-43f8-adaa-898b8878eb3f"],
+    "note": "All resources prefixed with 'TEST-2b-'. Share token 47b48943-… is the persistent 7d link for manual review (NOT revoked). The other 4 share tokens were created during sharing flow tests; one was revoked in the suite, the rest remain (24h or 7d).",
+    "openai_cost_total_usd": 0.0212
+  },
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/drafts/{id} (services/mappers.py:draft_to_api)",
+        "issue": "Mapper omits the 'exported_at' field even though the DB column is updated by POST /api/drafts/{id}/export-docx and the route audit-logs the export. The DB row IS updated correctly (verified by direct admin query), but no API response surfaces it, so the frontend cannot know if a draft was exported. Fix: add `'exported_at': row.get('exported_at')` in services/mappers.py:144 and include it in the public payload too if relevant."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "PublicDraftPage evidence markers",
+        "issue": "Markers in body render as small inline pills with bare ids (e.g. 'e001') rather than clickable buttons. No element matches `[data-evidence-id]`, `[data-testid^='evidence-marker']`, or `button:has-text('E:')`. The visual presentation is good and the IDs are embedded, but the spec asks for click→scroll→highlight on the side-panel evidence row. Could not verify the click interaction.",
+        "affected_selectors": ["[data-evidence-id]", "[data-testid^='evidence-marker']"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_results_per_test": {
+    "TEST 1 — civil_demand E2E": "PASS (3 sub-assertions). Cost=$0.0212. 5 evidences, 12 [E:xxx] occurrences (5 unique). Encabezamiento + 5 numbered hechos (each with marker) + fundamentos + petitum + otrosíes confirmed.",
+    "TEST 2 — DOCX export": "PASS. signed_url 200, sha256=d69022be3b78431c, 39044 bytes, 43 paragraphs, styles {Title:1, Heading 1:1, Heading 2:5, List Bullet:9, Normal:27}, bold runs present, evidence ids e001..e005 embedded. DB drafts.exported_at updated (mapper omission noted in backend.minor).",
+    "TEST 3 — Budget guardrail": "PASS (logic). Verified via monkeypatch unit test that get_current_usage().over_budget=true with budget=0 and remaining_usd<=0; as_dict() returns the required keys. Restored to 50 confirmed by post-test assertion. NOTE: the live HTTP-402 path was NOT exercised against the running server because monkeypatching settings inside the test process does not affect the supervisord-managed backend process; doing so would require either editing config.py on disk (risky — restore-failure could lock the suite) or adding a runtime override env var. The route logic at /app/backend/routes/runs.py:78-85 is correct (HTTPException 402 with the required message).",
+    "TEST 4 — Race condition versioning": "PASS via tests/test_versioning.py (5 concurrent insert_draft_atomic calls → 5 unique consecutive versions with no gaps). The skip-marker `_rpc_available` proves the RPC exists and is callable; the test calls `admin.rpc('insert_draft_atomic', …)` directly so the RPC path is enforced (NOT max+1 fallback).",
+    "TEST 5 — Sharing E2E": "PASS. Create 201 → list contains token → public GET ×3 returns full payload with watermark, case, draft.content_md (with [E:xxx] markers), evidences[].verified=true → view_count=3 in DB → invalid token 404 → revoke 204 → public GET 404.",
+    "TEST 6 — Frontend PublicDraftPage": "PASS (visual + structural). Persistent URL loads without auth, watermark 'GALAXY LEGAL · DEMO', banner 'Citas verificadas por Galaxy Legal', evidence side panel with 5 entries (E001-E005, page, paragraph, quote, VERIFICADA), markdown body with hechos and inline pill markers. No dashboard chrome. Click-to-scroll on markers could not be verified (see frontend.integration_issues)."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase2b_e2e.py",
+    "/app/backend/tests/test_versioning.py",
+    "/app/test_reports/pytest/iteration_2_phase2b.xml",
+    "/app/test_reports/public_draft_page.png"
+  ],
+  "action_items": [
+    "Add `exported_at` to services/mappers.py:draft_to_api so the frontend can surface 'exported' state (currently DB updates but API hides it).",
+    "Make the inline `[E:xxx]` markers in PublicDraftPage clickable: emit a `<button data-testid='evidence-marker-<id>' data-evidence-id='<id>'>` that triggers scroll + highlight on the matching evidence row in the side panel. Spec required this interaction (point 6.d).",
+    "Optional: align REACT_APP_BACKEND_URL in /app/frontend/.env (still pointing to magic-link-preview legacy host) to avoid confusion — Vite ignores it but it is misleading. (Same comment from iteration_1.)"
+  ],
+  "critical_code_review_comments": [
+    "services/mappers.py:draft_to_api silently drops exported_at — see backend.minor.",
+    "routes/runs.py:206-248 has a try/except over the RPC that swallows the exception and silently falls back to the non-transactional max+1 insert. If the RPC is removed or breaks, the fallback masks it. Recommend logging a WARNING when the RPC throws so the fallback path is observable in production.",
+    "services/sharing.py:resolve_public_draft uses `.single()` for both the draft and case fetches. If either row is missing or RLS hides it, supabase-py raises rather than returning None. The outer caller treats the share as 'not found' only via the initial empty `.eq('token').limit(1)` check. Edge cases (orphaned share after draft delete) could surface as 500 instead of 404. Wrap the draft/case lookups with a try/except.",
+    "services/docx_exporter strips [E:xxx] brackets and renders bare ids in grey. The user-facing spec says markers must remain visible as either superscripts or text — current 'smaller grey run' qualifies as text, but consider keeping the brackets or rendering true superscripts via run.font.subscript = False / superscript = True so the markers are unambiguously distinguishable from prose."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase2b_e2e.py (new — 9 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (45/45: 36 prior + 9 new)",
+    "frontend": "90% (PublicDraftPage core OK; click-to-scroll on markers unverified)"
+  },
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 2b validated. Persistent 7d share URL (NOT revoked): https://ba999ff0-b0a0-4c59-b346-fc3f4eaa7af6.preview.emergentagent.com/public/drafts/47b48943-d10d-487f-b63c-b53d80e39c88 — open without login. test_phase2b_e2e.py creates fresh resources every run (~$0.02 OpenAI cost per run, 5 evidences average). Race-condition test_versioning.py reads existing cases; do not delete the test user's cases or it will skip. Budget HTTP-402 path was validated only at the unit level; if a future iteration needs to confirm the live 402, set OPENAI_MONTHLY_BUDGET_USD=0 in /app/backend/.env, restart backend, hit /api/runs, then RESTORE the value (DELETE the override line) and restart again. Use the audit_log.action='draft.export_docx' to verify export persistence (services/audit.py).",
+  "rca of the issue": "Two minor findings, no critical bugs. (1) draft_to_api mapper does not include exported_at — pure mapper omission, fix is one line in services/mappers.py:144 (add `'exported_at': row.get('exported_at')`). Reproduction: POST /api/drafts/{id}/export-docx (returns 200), then GET /api/drafts/{id} → response has no exported_at key, even though the DB row does. (2) Inline evidence markers in PublicDraftPage are non-interactive plain text; they need to be wrapped in clickable buttons with data-testid + data-evidence-id and an onClick that scrolls the corresponding side-panel row into view + applies a transient highlight class. Spec point 6.d explicitly required this."
+}
