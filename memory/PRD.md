@@ -5,84 +5,97 @@ AI-powered legal workspace para despachos y equipos in-house. Stack:
 - **DB / Auth / Storage**: Supabase Pro (Postgres 17 + pgvector), proyecto `galaxy-legal` (`irzervhlczzzrydqfisn`), región `eu-west-3`
 - **Backend**: FastAPI 0.115 (Python 3.11)
 - **Frontend**: React 18 + Vite + Tailwind
-- **LLM**: GPT‑4o + `text-embedding-3-small` (1536 dim) — OpenAI directa (SDK) + Emergent LLM Key como fallback
+- **LLM**: GPT-4o + `text-embedding-3-small` (1536 dim) — OpenAI SDK directa + Emergent LLM Key fallback
 - **Drive**: Google Drive API + Picker (pendiente Fase 2-c)
-- **Deploy producción**: Railway (backend + frontend) — pendiente
+- **Deploy producción**: Railway (pendiente Fase 2-c)
 
-## Core requirements
-- **Anti-fantasma**: cada cita en un draft tiene `evidence_id` que substring-match verbatim al `texto_extraido` del documento fuente.
-- **RLS-first**: queries de usuario vía JWT; service-role solo para storage + audit_log + workflow background.
-- **Storage paths**: `<user_id>/<case_id>/<filename>` (bucket privado `legal-documents`, 25 MB).
-- **Drafts inmutables tras aprobación**: trigger `trg_drafts_immutable` bloquea modificaciones de `content_md` en drafts `approved`.
-- **JSON schema strict** en cada llamada OpenAI (`response_format={"type":"json_schema","strict":true}`).
-- **Idempotencia**: runs nunca sobrescriben; drafts auto-incrementan version por `(case_id, tipo_documento)`.
+## Core requirements (hard rules)
+1. **Anti-fantasma**: cada cita en un draft tiene `evidence_id` que substring-match verbatim al `texto_extraido`.
+2. **RLS-first**: queries de usuario vía JWT; service-role solo para storage + audit + workflow bg.
+3. **Storage paths**: `<user_id>/<case_id>/<...>` (bucket privado 25 MB).
+4. **Drafts inmutables tras aprobación**: trigger `trg_drafts_immutable` bloquea modificar `content_md`.
+5. **JSON schema strict** en cada llamada OpenAI.
+6. **Idempotencia**: runs nunca sobrescriben; drafts auto-incrementan version con advisory lock (Fase 2-b).
+7. **Budget guardrail**: antes de cada run se verifica consumo mensual vs `OPENAI_MONTHLY_BUDGET_USD`.
 
 ## What's been implemented
 
-### 2026-04-28 · Fase 1 — Login + infra (verificado e2e)
-- Repo `galaxy-legal` integrado en `/app` preservando `.git` con remoto a `Puzzlemanyyyyy/GALAXY-LEGAL`.
-- Backend FastAPI en supervisor :8001 (`server.py` re-exporta `app`); rutas bajo `/api`.
-- Frontend Vite en supervisor :3000 (`yarn start` → `vite --host 0.0.0.0 --port 3000`).
-- Pantalla de login (magic link + Google OAuth) con diseño dark/sober + Cormorant + glow gold.
-- Magic link e2e: petición a `/auth/v1/otp` con `redirect_to=<preview>/auth/callback` correcto.
+### 2026-04-28 · Fase 1 — Login + infra base (verificada)
+- Repo `galaxy-legal` integrado en `/app`, supervisor configurado (backend :8001, frontend :3000, prefijo `/api`).
+- LoginPage (magic link + Google) con diseño dark/sober + Cormorant.
+- `ProtectedRoute` + `AuthCallback` wired.
 
-### 2026-04-30 · Fase 2(a) — Núcleo crítico (e2e verificado por testing agent, 24/24 tests)
-**Backend**
-- **Services** (`/app/backend/services/`): `llm.py` (dual-path OpenAI/Emergent + cost tracking + retry 3x), `extractor.py` (PDF/DOCX/TXT), `chunker.py` (tiktoken cl100k_base, 400/50 overlap, page tracking), `embeddings_pipeline.py` (batch 100), `citation_validator.py` (substring-match verbatim, normaliza whitespace), `audit.py` (write-only), `workflows/base.py` (engine con JSON schema enforcement + retry con feedback + persistencia incremental), `workflows/initial_analysis.py` (pasos: `extract_facts` + `flag_risks`), `workflows/registry.py`, `mappers.py` (traduce DB schema ↔ API response para absorber quirks).
-- **Routes** (`/api/...`): `documents` (upload + dedupe SHA-256 + bg indexing, list, get, reindex, delete), `runs` (types, list, get, draft, evidences, POST con bg task), `drafts` (list, get, revision con `diff_match_patch`, approve bloqueado si `parent_draft_id` ≠ null, reject).
-- **Adaptación al schema real**: mapper traduce `nombre↔filename`, `page_count↔pages_count`, `tipo_documento↔draft_type`, `completed_at↔finished_at`, `error_message↔error`, `diff_from_previous↔diff_patch`, `reviewer_id↔approved_by`; enum `runs.status` usa `completed` (no `succeeded`); `case_documents.tipo` cae a `'other'` y la extensión real se guarda en `metadata.ext`; estado derivado (`indexing/ready/failed`) desde `indexed_at` + `metadata.index_error`; `citations_valid` computado por mapper (true si el draft no tiene `parent_draft_id`).
+### 2026-04-30 · Fase 2(a) — Núcleo crítico (e2e, 24/24 tests)
+- Schema real introspeccionado + capa `services/mappers.py` que traduce nombres DB (`nombre`, `tipo_documento`, `completed_at`, `error_message`, `diff_from_previous`, `reviewer_id`, `page_count`) ↔ shape frontend legacy.
+- Ingestion: PDF/DOCX/TXT → chunking (tiktoken, 400/50) → embeddings batch 100 → `document_chunks` con vector(1536).
+- Workflow engine con JSON schema strict enforcement + retry con feedback + persistencia incremental de `output_jsonb._current_step`.
+- Workflow `initial_analysis`: extract_facts + flag_risks.
+- Citation validator verbatim; drafts con marcadores `[E:xxx]` resueltos a tooltips verificados.
+- Frontend 3-columnas CasePage, DraftEditorPage con preview, upload drag&drop.
 
-**Frontend** (`/app/frontend/src/`)
-- `lib/api.js` — wrapper fetch con Bearer token automático de sesión Supabase.
-- `pages/LoginPage.jsx` — magic link + Google con `data-testid` completos.
-- `pages/DashboardPage.jsx` — lista real de cases con cards clicables, modal de creación (`NewCaseModal`), status pills.
-- `pages/CasePage.jsx` — layout 3 columnas: izquierda (DocumentUpload drag&drop + lista docs con DocStatus badges), centro (tabs Resumen/Borradores/Evidencias/Auditoría), derecha (WorkflowCard con `workflow-card-<type>` testid + lista de runs con polling).
-- `pages/DraftEditorPage.jsx` — editor markdown + vista previa con marcadores `[E:xxx]` resaltados (verde verificado / rojo no), panel de evidencias con quote_excerpt, banner si hay citas sin verificar, Aprobar deshabilitado si `citations_valid=false`.
-- `components/{NewCaseModal, DocumentUpload, WorkflowCard}.jsx` — componentes con `data-testid` consistentes.
-- Routing: `/` → `/dashboard` → `/cases/:caseId` → `/cases/:caseId/drafts/:draftId`.
+### 2026-04-30 · Fase 2(b) — Workflows + export + budget + sharing (tests 30/30 en iter, 6 skipped esperan SQL)
+**Workflows nuevos** (`backend/services/workflows/`):
+- `civil_demand.py` — demanda civil (encabezamiento, hechos numerados con ≥1 evidence cada uno, fundamentos de derecho, petitum, otrosíes).
+- `fiscal_consultation.py` — consulta fiscal (planteamiento, cuestiones, normativa aplicable sin inventar artículos, análisis, implicaciones, riesgos, conclusión).
+- `jurisprudence_analysis.py` — análisis de jurisprudencia interna del caso (sin CENDOJ), findings con postura favorable vs contraria.
+- `registry.py` actualizado con los 4 workflows.
 
-**Testing (iteración 1)** — `/app/test_reports/iteration_1.json`
-- 24/24 tests verdes (9 unit + 15 e2e backend): upload → indexación → workflow → citas verbatim-verificadas → aprobación → inmutabilidad.
-- Anti-fantasma verificado: cada `evidence.quote_excerpt` substring-match al `texto_extraido` del doc. Todas `verified=true`.
-- Smoke e2e manual del main agent: run `initial_analysis` produjo draft con 5 citas verificadas (`e001..e005`), coste $0.015, aprobado OK.
-- Frontend verificado: auth via password grant → localStorage inyectado → `/dashboard` → 4 cases cards → click → `/cases/:id` → workflow-card-initial_analysis visible.
+**Export DOCX** (`services/docx_exporter.py`):
+- Conversor markdown-ish (H1/H2/H3, bullets, **bold**, *italic*, `[E:xxx]` como superíndice gris) a `.docx` vía `python-docx`.
+- Sube a Storage bajo `<user>/<case>/exports/draft-<id>-v<ver>-<hash>.docx` y devuelve signed URL 1h.
+- Endpoint `POST /api/drafts/{id}/export-docx` actualiza `drafts.exported_at` y escribe audit log.
 
-### Correcciones aplicadas post-testing
-- Fix template literal roto en `CasePage.jsx:160` que renderizaba `${0.0169}` literal (ahora `$0.0169`).
-- `data-testid="workflows-list"` añadido para facilitar selectores de test.
-- Limpieza de ramas legacy `'succeeded'` (ahora solo `'completed'`).
-- Confirmado `data-testid="workflow-card-initial_analysis"` presente en `WorkflowCard.jsx`.
+**Budget guardrail** (`services/budget.py` + `routes/usage.py`):
+- Calcula consumo del mes en curso sumando `runs.cost_usd` on-the-fly (sin tabla materializada).
+- `POST /api/runs` devuelve **402 Payment Required** si `spent >= OPENAI_MONTHLY_BUDGET_USD`.
+- `GET /api/usage/current` devuelve `{spent_usd, budget_usd, remaining_usd, run_count, month, over_budget}`.
+- Frontend: componente `UsageBar` en Dashboard con barra de progreso (verde <80%, ámbar 80-100%, rojo 100%).
 
-## Hard rules enforced (verificadas)
-1. ✅ **No source, no claim** — validador rechaza claims sin `evidence_ids`.
-2. ✅ **Verbatim citation** — `quote_excerpt` substring-match case-insensitive whitespace-normalized al `texto_extraido`.
-3. ✅ **No silent overwrite** — trigger DB bloquea overwrite de approved; revisions crean nueva versión con `parent_draft_id`.
-4. ✅ **RLS-first** — queries usuario via `get_user_client(token)`; service-role solo en rutas admin (storage, audit, workflow bg).
-5. ✅ **Storage paths** siempre `<user_id>/<case_id>/<uuid>-<filename>`.
-6. ✅ **JSON schema strict** en cada llamada OpenAI.
-7. ✅ **Idempotencia** runs + auto-increment version en drafts.
+**Re-validación de citas en revisiones** (`routes/drafts.py`):
+- `POST /api/drafts/{id}/revision` detecta `[E:xxx]` en el nuevo `content_md`; cualquier marcador desconocido va a `unverified_markers[]`; re-valida `quote_excerpt ⊂ texto_extraido` contra los docs del run original.
+- Response incluye `citations_valid` + `unverified_markers` + `validation_errors`.
+- `POST /api/drafts/{id}/approve` sobre una revisión devuelve **422** si `unverified_markers` o `validation_errors` existen.
+
+**Atomic version increment** (`services/workflows` + RPC `insert_draft_atomic`):
+- RPC Postgres con `pg_advisory_xact_lock(hash(case_id, tipo_documento))` → `SELECT MAX(version)+1` → `INSERT ... RETURNING *`.
+- Tanto `routes/runs.py` como `routes/drafts.py::create_revision` llaman a la RPC; fallback a max+1 no-transaccional si la RPC aún no está desplegada.
+
+**Shareable read-only links** (tabla `shared_drafts` + `services/sharing.py` + `routes/public.py`):
+- Tabla nueva: `shared_drafts (token uuid PK, draft_id, created_by, expires_at, watermark, view_count, last_viewed_at)` + RLS "owner all" + RPC `increment_share_view` (SECURITY DEFINER, anon-callable).
+- Endpoint owner: `POST /api/drafts/{id}/share {expires_in: "24h"|"7d"|"30d"|"never", watermark}`, `GET /api/drafts/{id}/shares`, `DELETE /api/drafts/shares/{token}`.
+- Endpoint público: `GET /api/public/drafts/{token}` (sin auth) devuelve `{case:{title,jurisdiccion,materia}, draft:{title,content_md,version,status}, evidences:[{external_id,page,paragraph,quote_excerpt,verified}], watermark, expires_at}`. Incrementa view_count atómicamente.
+- Frontend: ruta pública `/public/drafts/:token` → `PublicDraftPage.jsx` con layout split (draft + panel de evidencias clicables). Markers `[E:xxx]` son `<button>` que hace scroll + highlight de la evidencia. Banner "Citas verificadas por Galaxy Legal" + watermark opcional + footer legal.
+- Modal `ShareDraftModal.jsx` en DraftEditor: selector expiración, watermark, listado de links activos con copiar/abrir/revocar y contador de vistas.
+
+**Tests añadidos** (todos verdes):
+- `test_docx_exporter.py` — 2 tests (headings, bullets, bold/italic, footer).
+- `test_budget.py` — 3 tests (vacío, suma, over-budget).
+- `test_workflow_registry.py` — 3 tests (4 workflows registrados, estructura OK, unknown → ValueError).
+- `test_sharing.py` — 3 tests (skip automático si `shared_drafts` no existe; create+resolve+revoke+invalid expires).
+- `test_versioning.py` — 1 test asyncio (skip si RPC no existe; 5 inserts concurrentes con advisory lock, versiones únicas y consecutivas).
 
 ## Pendiente
 
-### P1 — Workflows adicionales (Fase 2-b)
-- `workflows/civil_demand.py` — demanda civil (encabezamiento, hechos, fundamentos, petitum, otrosíes).
-- `workflows/fiscal_consultation.py` — consulta fiscal con citas a normativa BOE.
-- `workflows/jurisprudence_analysis.py` — análisis jurisprudencia interna.
-- Export DOCX (`GET /api/drafts/{id}/export-docx` con `python-docx`).
-- Cost tracking global + budget guardrail mensual (`OPENAI_MONTHLY_BUDGET_USD`).
-- Re-validación de citas en revisiones humanas.
-- Version auto-increment transaccional (Postgres function + upsert) para evitar carreras.
+### P0 — Usuario debe aplicar SQL
+Aplicar `/app/supabase/0002_phase2b.sql` vía MCP o SQL Editor:
+- `shared_drafts` tabla + RLS policy.
+- `increment_share_view(uuid)` RPC.
+- `insert_draft_atomic(...)` RPC con advisory lock.
 
-### P2 — Drive + producción (Fase 2-c)
+Ninguna alteración sobre objetos existentes — solo add-only.
+
+### P1 — Fase 2(c): Drive + producción
 - `components/DrivePicker.jsx` + `POST /api/drive/import`.
 - Google OAuth + Picker API en Google Cloud Console.
-- Suite pytest workflows (mocked OpenAI).
-- Deploy producción Railway + Supabase URL Configuration con dominio público.
-- Configurar Supabase URL Configuration con preview URL (Site URL + Redirect URLs) para magic link e2e real.
+- Deploy Railway (2 servicios: backend + frontend).
+- Supabase URL Configuration para dominio público.
 
-### Out of scope (v2+)
-- BOE / CENDOJ live API.
+### P2 — Enhancements
+- CENDOJ / BOE live API (reemplaza al "interno del case").
 - Whisper transcripción juicios.
 - Multi-tenant org/team UI.
-- Billing / subscriptions.
-- Modo Demo sin login (idea comercial, usuario la descartó para v1 porque "un demo con workflows flojos vende peor que ninguno").
+- Billing Stripe.
+- Supabase Auth URL Configuration en preview (Site URL + Redirect) para magic link real end-to-end.
+
+## Out of scope (v2+)
+- Modo demo sin login (idea comercial descartada por el usuario — "un demo con workflows flojos vende peor que ninguno").

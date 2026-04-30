@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from services import audit
 from services.auth import get_current_user
+from services.budget import get_current_usage
 from services.mappers import draft_to_api, evidence_to_api, run_to_api
 from services.supabase_client import get_supabase_admin, get_user_client
 from services.workflows import REGISTRY, get_workflow
@@ -73,6 +74,15 @@ async def get_run_draft(run_id: str, user: dict = Depends(get_current_user)):
 async def create_run(payload: RunCreate, background: BackgroundTasks, user: dict = Depends(get_current_user)):
     if payload.workflow_type not in REGISTRY:
         raise HTTPException(400, f"Unknown workflow_type. Available: {list(REGISTRY)}")
+
+    # Budget guardrail — reject new runs if the current month spend is over the cap.
+    usage = get_current_usage(owner_id=user["id"])
+    if usage.remaining_usd <= 0:
+        raise HTTPException(
+            402,
+            f"Monthly OpenAI budget exceeded (${usage.spent_usd:.2f}/${usage.budget_usd:.2f}). "
+            "Increase OPENAI_MONTHLY_BUDGET_USD or wait for the next month.",
+        )
 
     user_sb = get_user_client(user["token"])
     case = user_sb.table("cases").select("*").eq("id", payload.case_id).single().execute()
@@ -195,32 +205,47 @@ async def _run_workflow_async(run_id: str, case_id: str, workflow_type: str, own
 
     if result.status == "completed" and result.draft is not None:
         tipo = result.draft["draft_type"]
-        # Compute next version for (case, tipo_documento) — the live schema has
-        # a unique constraint on (case_id, tipo_documento, version).
-        existing = (
-            admin.table("drafts")
-            .select("version")
-            .eq("case_id", case_id)
-            .eq("tipo_documento", tipo)
-            .order("version", desc=True)
-            .limit(1)
-            .execute()
-            .data or []
-        )
-        next_version = (existing[0]["version"] if existing else 0) + 1
-        draft_row = (
-            admin.table("drafts")
-            .insert({
-                "case_id": case_id,
-                "run_id": run_id,
-                "version": next_version,
-                "tipo_documento": tipo,
-                "content_md": result.draft["content_md"],
-                "status": "draft",
-            })
-            .execute()
-            .data[0]
-        )
+        # Prefer the transactional RPC so two concurrent runs can't collide
+        # on the (case_id, tipo_documento, version) unique constraint.
+        draft_row = None
+        try:
+            rpc = admin.rpc("insert_draft_atomic", {
+                "p_case_id":     case_id,
+                "p_run_id":      run_id,
+                "p_parent_id":   None,
+                "p_tipo":        tipo,
+                "p_content_md":  result.draft["content_md"],
+                "p_diff":        None,
+            }).execute()
+            data = rpc.data
+            draft_row = (data if isinstance(data, dict) else (data[0] if data else None))
+        except Exception:
+            draft_row = None
+        if draft_row is None:
+            existing = (
+                admin.table("drafts")
+                .select("version")
+                .eq("case_id", case_id)
+                .eq("tipo_documento", tipo)
+                .order("version", desc=True)
+                .limit(1)
+                .execute()
+                .data or []
+            )
+            next_version = (existing[0]["version"] if existing else 0) + 1
+            draft_row = (
+                admin.table("drafts")
+                .insert({
+                    "case_id": case_id,
+                    "run_id": run_id,
+                    "version": next_version,
+                    "tipo_documento": tipo,
+                    "content_md": result.draft["content_md"],
+                    "status": "draft",
+                })
+                .execute()
+                .data[0]
+            )
         if result.evidences:
             # Map chunk coordinates (document_id, page, paragraph) to chunk_id
             # so evidences link back to the concrete chunk row.

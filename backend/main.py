@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from routes import auth, cases, documents, runs, drafts, drive, health
+from routes import auth, cases, documents, runs, drafts, drive, health, usage, public
 
 
 @asynccontextmanager
@@ -15,7 +15,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Galaxy Legal API",
-    version="0.1.0",
+    version="0.2.0",
     description="AI-powered legal workspace backend",
     lifespan=lifespan,
 )
@@ -29,19 +29,19 @@ app.add_middleware(
 )
 
 # Emergent ingress routes /api/* → backend on :8001.
-# All Galaxy Legal routes are namespaced under /api so the same backend
-# works locally (port 8000) and behind Emergent's preview URL.
 API_PREFIX = "/api"
 
-app.include_router(health.router, prefix=API_PREFIX)
-app.include_router(auth.router, prefix=f"{API_PREFIX}/auth", tags=["auth"])
-app.include_router(cases.router, prefix=f"{API_PREFIX}/cases", tags=["cases"])
+app.include_router(health.router,    prefix=API_PREFIX)
+app.include_router(auth.router,      prefix=f"{API_PREFIX}/auth",      tags=["auth"])
+app.include_router(cases.router,     prefix=f"{API_PREFIX}/cases",     tags=["cases"])
 app.include_router(documents.router, prefix=f"{API_PREFIX}/documents", tags=["documents"])
-app.include_router(runs.router, prefix=f"{API_PREFIX}/runs", tags=["runs"])
-app.include_router(drafts.router, prefix=f"{API_PREFIX}/drafts", tags=["drafts"])
-app.include_router(drive.router, prefix=f"{API_PREFIX}/drive", tags=["drive"])
+app.include_router(runs.router,      prefix=f"{API_PREFIX}/runs",      tags=["runs"])
+app.include_router(drafts.router,    prefix=f"{API_PREFIX}/drafts",    tags=["drafts"])
+app.include_router(drive.router,     prefix=f"{API_PREFIX}/drive",     tags=["drive"])
+app.include_router(usage.router,     prefix=f"{API_PREFIX}/usage",     tags=["usage"])
+app.include_router(public.router,    prefix=f"{API_PREFIX}/public",    tags=["public"])
 
 
 @app.get(f"{API_PREFIX}/")
 def root():
-    return {"name": "Galaxy Legal API", "version": "0.1.0", "docs": "/docs"}
+    return {"name": "Galaxy Legal API", "version": "0.2.0", "docs": "/docs"}

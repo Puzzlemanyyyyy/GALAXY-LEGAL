@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ShieldCheck, AlertTriangle, Save, CheckCircle2, Loader2 } from 'lucide-react'
+import { ArrowLeft, ShieldCheck, AlertTriangle, Save, CheckCircle2, Loader2, Download, Share2 } from 'lucide-react'
 import { api } from '../lib/api'
+import ShareDraftModal from '../components/ShareDraftModal'
 
 export default function DraftEditorPage() {
   const { caseId, draftId } = useParams()
@@ -14,6 +15,8 @@ export default function DraftEditorPage() {
   const [error, setError] = useState('')
   const [picked, setPicked] = useState(null)
   const [success, setSuccess] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
 
   const reload = async () => {
     setError('')
@@ -56,6 +59,16 @@ export default function DraftEditorPage() {
     finally { setApproving(false) }
   }
 
+  const exportDocx = async () => {
+    setExporting(true); setError(''); setSuccess('')
+    try {
+      const res = await api.exportDocx(draftId)
+      setSuccess('DOCX exportado — abriendo en nueva pestaña.')
+      if (res?.signed_url) window.open(res.signed_url, '_blank', 'noopener,noreferrer')
+    } catch (err) { setError(err.message) }
+    finally { setExporting(false) }
+  }
+
   if (!draft) return <div className="min-h-screen grid place-items-center text-ink-600"><Loader2 className="w-5 h-5 animate-spin" /></div>
 
   const isApproved = draft.status === 'approved'
@@ -74,6 +87,12 @@ export default function DraftEditorPage() {
           </div>
           <button data-testid="save-revision-btn" disabled={saving || isApproved} onClick={save} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-ink-200 bg-white text-ink-900 text-sm hover:bg-ink-50 disabled:opacity-50">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Guardar revisión
+          </button>
+          <button data-testid="export-docx-btn" disabled={exporting} onClick={exportDocx} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-ink-200 bg-white text-ink-900 text-sm hover:bg-ink-50 disabled:opacity-50">
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} DOCX
+          </button>
+          <button data-testid="share-draft-btn" onClick={() => setShareOpen(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-ink-200 bg-white text-ink-900 text-sm hover:bg-ink-50">
+            <Share2 className="w-4 h-4" /> Compartir
           </button>
           <button data-testid="approve-btn" disabled={approving || isApproved || unverified.length > 0 || !draft.citations_valid} onClick={approve} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-ink-900 text-white text-sm font-medium hover:bg-brand-700 disabled:opacity-50">
             {approving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} Aprobar
@@ -128,6 +147,7 @@ export default function DraftEditorPage() {
           </ul>
         </aside>
       </main>
+      <ShareDraftModal open={shareOpen} onClose={() => setShareOpen(false)} draft={draft} />
     </div>
   )
 }

@@ -263,7 +263,14 @@ class TestFullFlow:
                 failures.append((ev.get("claim_id") or ev.get("external_id"), q))
         assert not failures, f"Anti-fantasma violation — quotes not substring of source: {failures}"
 
-    def test_draft_approve_revision_and_block(self, headers):
+    def test_draft_approve_revision_and_revalidate(self, headers):
+        """Fase 2-b: revisions now re-validate citations.
+
+        - A revision that only adds prose with no new [E:xxx] markers is still
+          valid because existing markers remain verified.
+        - A revision that adds an UNKNOWN [E:xxx] marker must fail approval
+          with HTTP 422.
+        """
         draft_id = TestFullFlow.shared.get("draft_id")
         if not draft_id:
             pytest.skip("No draft to approve (run did not complete)")
@@ -275,7 +282,7 @@ class TestFullFlow:
         assert approved.get("status") == "approved"
         assert approved.get("approved_at") is not None
 
-        # Create a revision: 201 + version=2 + parent_draft_id set
+        # Revision A: plain text append, no new markers → revalidation passes.
         r = requests.post(
             f"{BASE_URL}/api/drafts/{draft_id}/revision",
             headers=headers,
@@ -283,13 +290,23 @@ class TestFullFlow:
             timeout=30,
         )
         assert r.status_code == 201, r.text
-        revision = r.json()
-        assert int(revision.get("version", 0)) == 2, f"Expected version=2, got {revision}"
+        rev_ok = r.json()
+        assert int(rev_ok.get("version", 0)) == 2
+        assert rev_ok.get("citations_valid") is True
+        # Approving it should succeed because all existing [E:xxx] markers are still verified.
+        r = requests.post(f"{BASE_URL}/api/drafts/{rev_ok['id']}/approve", headers=headers, timeout=20)
+        assert r.status_code == 200, f"Valid revision should approve, got {r.status_code}: {r.text}"
 
-        # Approving a revision must return 400
+        # Revision B: introduces a fake [E:e999] → revalidation must flag and block approval.
         r = requests.post(
-            f"{BASE_URL}/api/drafts/{revision['id']}/approve",
+            f"{BASE_URL}/api/drafts/{draft_id}/revision",
             headers=headers,
-            timeout=20,
+            json={"content_md": (approved.get("content_md") or "") + "\n\nInvented reference [E:e999]"},
+            timeout=30,
         )
-        assert r.status_code == 400, f"Revision approval should be blocked, got {r.status_code}: {r.text}"
+        assert r.status_code == 201, r.text
+        rev_bad = r.json()
+        assert rev_bad.get("citations_valid") is False
+        assert "e999" in (rev_bad.get("unverified_markers") or [])
+        r = requests.post(f"{BASE_URL}/api/drafts/{rev_bad['id']}/approve", headers=headers, timeout=20)
+        assert r.status_code == 422, f"Bad revision should be blocked (422), got {r.status_code}: {r.text}"

@@ -61,4 +61,22 @@ export const api = {
   saveRevision: (id, content_md, title) => request(`/drafts/${id}/revision`, { method: 'POST', body: { content_md, title } }),
   approveDraft: (id) => request(`/drafts/${id}/approve`, { method: 'POST' }),
   rejectDraft:  (id) => request(`/drafts/${id}/reject`, { method: 'POST' }),
+  exportDocx:   (id) => request(`/drafts/${id}/export-docx`, { method: 'POST' }),
+
+  // sharing
+  shareDraft:   (id, body) => request(`/drafts/${id}/share`, { method: 'POST', body }),
+  listShares:   (id) => request(`/drafts/${id}/shares`),
+  revokeShare:  (token) => request(`/drafts/shares/${token}`, { method: 'DELETE' }),
+
+  // usage
+  getUsage:     () => request('/usage/current'),
+}
+
+// Public endpoint (no auth)
+export async function getPublicDraft(token) {
+  const res = await fetch(`${BASE}/api/public/drafts/${token}`)
+  const text = await res.text()
+  let data; try { data = text ? JSON.parse(text) : null } catch { data = text }
+  if (!res.ok) throw new Error((data && data.detail) || res.statusText || 'Request failed')
+  return data
 }

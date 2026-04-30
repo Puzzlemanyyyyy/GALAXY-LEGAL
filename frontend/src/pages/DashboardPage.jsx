@@ -4,6 +4,7 @@ import { Scale, LogOut, Plus, FolderOpen, ChevronRight, Loader2 } from 'lucide-r
 import { supabase } from '../lib/supabase'
 import { api } from '../lib/api'
 import NewCaseModal from '../components/NewCaseModal'
+import UsageBar from '../components/UsageBar'
 
 export default function DashboardPage() {
   const [user, setUser] = useState(null)
@@ -60,6 +61,10 @@ export default function DashboardPage() {
           <button data-testid="new-case-btn" onClick={() => setModalOpen(true)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-ink-900 text-white font-medium hover:bg-brand-700 transition">
             <Plus className="w-4 h-4" /> Nuevo expediente
           </button>
+        </div>
+
+        <div className="mb-6">
+          <UsageBar />
         </div>
 
         {error && <div data-testid="dashboard-error" className="mb-4 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">{error}</div>}
