@@ -135,7 +135,7 @@ export default function CasePage() {
           <div className="px-1">
             <div className="text-xs uppercase tracking-wider text-ink-600 mb-2">Workflows</div>
             {workflowTypes.length === 0 && <div className="text-sm text-ink-600">No hay workflows disponibles.</div>}
-            <div className="space-y-2">
+            <div data-testid="workflows-list" className="space-y-2">
               {workflowTypes.map((w) => (
                 <WorkflowCard
                   key={w.workflow_type}
@@ -157,9 +157,9 @@ export default function CasePage() {
                     <RunStatus status={r.status} />
                   </div>
                   <div className="text-xs text-ink-600 mt-1">
-                    Paso: {r.current_step || '—'} · ${'{'}{Number(r.cost_usd || 0).toFixed(4)}{'}'}
+                    Paso: {r.current_step || '—'} · ${Number(r.cost_usd || 0).toFixed(4)}
                   </div>
-                  {(r.status === 'completed' || r.status === 'succeeded') && (
+                  {r.status === 'completed' && (
                     <button data-testid={`open-draft-${r.id}`} onClick={async () => {
                       try {
                         const d = await api.getRunDraft(r.id)
@@ -189,7 +189,6 @@ function RunStatus({ status }) {
     queued:      'text-ink-600',
     running:     'text-brand-700',
     completed:   'text-emerald-700',
-    succeeded:   'text-emerald-700',
     failed:      'text-rose-700',
     needs_human: 'text-amber-700',
   }
@@ -205,7 +204,7 @@ function SummaryTab({ caseData, docs, runs, drafts }) {
       </div>
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Documentos" value={docs.length} sub={`${docs.filter((d) => d.status === 'ready').length} indexados`} />
-        <Stat label="Ejecuciones" value={runs.length} sub={`${runs.filter((r) => r.status === 'completed' || r.status === 'succeeded').length} OK`} />
+        <Stat label="Ejecuciones" value={runs.length} sub={`${runs.filter((r) => r.status === 'completed').length} OK`} />
         <Stat label="Borradores" value={drafts.length} sub={`${drafts.filter((d) => d.status === 'approved').length} aprobados`} />
       </div>
       <div className="rounded-lg bg-ink-50 border border-ink-200 p-4 text-sm text-ink-600">
@@ -249,7 +248,7 @@ function EvidencesTab({ runs }) {
   const [evidences, setEvidences] = useState([])
   const [picked, setPicked] = useState(null)
   useEffect(() => {
-    const done = runs.find((r) => r.status === 'completed' || r.status === 'succeeded')
+    const done = runs.find((r) => r.status === 'completed')
     if (!done) { setEvidences([]); setPicked(null); return }
     setPicked(done.id)
     api.getRunEvidences(done.id).then(setEvidences).catch(() => setEvidences([]))
