@@ -22,17 +22,6 @@ export default function LoginPage() {
     else setStatus('sent')
   }
 
-  const signInGoogle = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        scopes: 'https://www.googleapis.com/auth/drive.file',
-      },
-    })
-    if (error) setError(error.message)
-  }
-
   return (
     <div data-testid="login-page" className="min-h-screen w-full grid lg:grid-cols-2 bg-gradient-to-br from-ink-50 via-white to-brand-50">
       {/* LEFT: brand panel */}
@@ -85,7 +74,7 @@ export default function LoginPage() {
 
           <h2 className="font-serif text-3xl sm:text-4xl text-ink-900 font-semibold mb-2">Acceder</h2>
           <p className="text-ink-600 mb-8">
-            Recibe un enlace mágico por correo o entra con Google para conectar Drive.
+            Recibe un enlace mágico por correo. Sin contraseñas, sin terceros.
           </p>
 
           {status === 'sent' ? (
@@ -129,21 +118,6 @@ export default function LoginPage() {
                 </button>
               </form>
 
-              <div className="my-6 flex items-center gap-3">
-                <div className="flex-1 h-px bg-ink-200" />
-                <span className="text-xs uppercase tracking-wider text-ink-600">o</span>
-                <div className="flex-1 h-px bg-ink-200" />
-              </div>
-
-              <button
-                data-testid="google-signin-btn"
-                onClick={signInGoogle}
-                className="w-full inline-flex items-center justify-center gap-3 py-3 rounded-xl border border-ink-200 bg-white text-ink-900 font-medium hover:bg-ink-50 transition"
-              >
-                <GoogleLogo />
-                Continuar con Google
-              </button>
-
               {error && (
                 <div data-testid="login-error-banner" className="mt-4 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">
                   {error}
@@ -171,16 +145,5 @@ function Feature({ icon, title, text }) {
         <div className="text-sm text-ink-200/70">{text}</div>
       </div>
     </div>
-  )
-}
-
-function GoogleLogo() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
-      <path d="M17.64 9.2a10 10 0 0 0-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92a8.78 8.78 0 0 0 2.68-6.62z" fill="#4285F4"/>
-      <path d="M9 18a8.6 8.6 0 0 0 5.96-2.18l-2.92-2.26a5.4 5.4 0 0 1-8.04-2.84H.96v2.34A9 9 0 0 0 9 18z" fill="#34A853"/>
-      <path d="M3.96 10.72a5.4 5.4 0 0 1 0-3.44V4.94H.96a9 9 0 0 0 0 8.12l3-2.34z" fill="#FBBC05"/>
-      <path d="M9 3.58a4.86 4.86 0 0 1 3.44 1.34l2.58-2.58A8.66 8.66 0 0 0 9 0 9 9 0 0 0 .96 4.94l3 2.34A5.4 5.4 0 0 1 9 3.58z" fill="#EA4335"/>
-    </svg>
   )
 }
