@@ -5,6 +5,8 @@ import { supabase } from '../lib/supabase'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPwd, setShowPwd] = useState(false)
   const [status, setStatus] = useState('idle') // idle | sending | sent | error
   const [error, setError] = useState('')
   const navigate = useNavigate()
@@ -20,6 +22,17 @@ export default function LoginPage() {
     })
     if (error) { setStatus('error'); setError(error.message) }
     else setStatus('sent')
+  }
+
+  const signInPassword = async (e) => {
+    e.preventDefault()
+    if (!email || !password) return
+    setStatus('sending')
+    setError('')
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) { setStatus('error'); setError(error.message); return }
+    setStatus('idle')
+    navigate('/dashboard')
   }
 
   return (
@@ -117,6 +130,50 @@ export default function LoginPage() {
                   </>}
                 </button>
               </form>
+
+              <div className="mt-4">
+                {!showPwd ? (
+                  <button
+                    data-testid="toggle-password-login-btn"
+                    type="button"
+                    onClick={() => setShowPwd(true)}
+                    className="text-xs text-ink-600 hover:text-ink-900 underline underline-offset-4"
+                  >
+                    ¿Tienes contraseña? Acceder con contraseña
+                  </button>
+                ) : (
+                  <form data-testid="password-login-form" onSubmit={signInPassword} className="space-y-3 pt-2 border-t border-ink-200/60">
+                    <label className="block">
+                      <span className="text-sm font-medium text-ink-900">Contraseña</span>
+                      <input
+                        data-testid="login-password-input"
+                        type="password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="••••••••"
+                        className="mt-1.5 w-full px-3 py-2.5 rounded-xl border border-ink-200 bg-white text-ink-900 placeholder:text-ink-600/50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition"
+                      />
+                    </label>
+                    <button
+                      data-testid="signin-password-btn"
+                      type="submit"
+                      disabled={status === 'sending'}
+                      className="w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl border border-ink-900 text-ink-900 font-medium hover:bg-ink-50 transition disabled:opacity-60"
+                    >
+                      {status === 'sending' ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Acceder con contraseña'}
+                    </button>
+                    <button
+                      data-testid="cancel-password-login-btn"
+                      type="button"
+                      onClick={() => { setShowPwd(false); setPassword('') }}
+                      className="text-xs text-ink-600 hover:text-ink-900 underline underline-offset-4"
+                    >
+                      Volver al enlace mágico
+                    </button>
+                  </form>
+                )}
+              </div>
 
               {error && (
                 <div data-testid="login-error-banner" className="mt-4 text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">
