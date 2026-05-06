@@ -56,15 +56,22 @@ def _render_paragraph(para, text: str, size: int = 11) -> None:
         pos = m.end()
 
     for kind, body in tokens:
+        if kind == "ev":
+            # Render evidence markers as superscript so they read like a
+            # footnote pointer, not as a low-contrast inline tag. Keep the
+            # bracketed shape ("[E:e001]") so a copy-paste of the DOCX into
+            # any other tool still surfaces the marker as plain text.
+            run = para.add_run(f"[E:{body}]")
+            run.font.size = Pt(max(7, size - 3))
+            run.font.color.rgb = RGBColor(0x52, 0x59, 0x6A)  # ink-700, more legible than ink-600
+            run.font.superscript = True
+            continue
         run = para.add_run(body)
         run.font.size = Pt(size)
         if kind == "bold":
             run.bold = True
         elif kind == "ital":
             run.italic = True
-        elif kind == "ev":
-            run.font.color.rgb = RGBColor(0x94, 0x9A, 0xA8)  # ink-600
-            run.font.size = Pt(max(8, size - 2))
 
 
 def markdown_to_docx(title: str, content_md: str, *, footer_line: str | None = None) -> bytes:

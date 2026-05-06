@@ -1,79 +1,277 @@
-# Despliegue — Galaxy Legal
+# Galaxy Legal — Deploy guide (Railway production)
 
-## A) GitHub
+Last updated: 2026-05-XX
+Repo: `github.com/Puzzlemanyyyyy/GALAXY-LEGAL`
+Status of this guide: ready to execute. **No code changes required.**
 
-```bash
-cd galaxy-legal
-git remote add origin git@github.com:<TU_USUARIO>/galaxy-legal.git
-git branch -M main
-git push -u origin main
+This document is the canonical recipe for taking the current `main` branch
+to production on Railway. It does **not** require any further work from
+the agent — every step is a UI action you (or an ops engineer) perform on
+the listed dashboards.
+
+---
+
+## 0. Prerequisites checklist
+
+Before starting:
+
+- [ ] **Repo pushed to GitHub** (last SHA on `main` should include
+      `backend/services/drive.py`, `frontend/src/components/DrivePicker.jsx`,
+      `frontend/src/pages/PrivacyPage.jsx`, `frontend/src/pages/TermsPage.jsx`,
+      `docs/MANUAL_USUARIO.md`).
+- [ ] **Supabase project healthy** (`https://irzervhlczzzrydqfisn.supabase.co`).
+- [ ] **Supabase migrations applied** in this exact order on the live database:
+        1. `supabase/0001_init_schema.sql`
+        2. `supabase/0002_phase2b.sql`
+        3. `supabase/0003_align_to_live.sql` ← brings 0001 into the shape the
+           backend code expects (idempotent — safe to re-run).
+- [ ] **Railway account** (`railway.app`) created, plan Hobby ($5/month) or
+      higher, payment method on file. Auto-deploy currently OFF on the
+      `GALAXY-LEGAL` service.
+- [ ] **Google Cloud OAuth Client + Picker API key** available (only if you
+      want Drive Picker live in production from day 1; can be added later).
+
+---
+
+## 1. Railway service topology
+
+We deploy **two services from the same repo**, one for the FastAPI backend
+and one for the Vite frontend (built and served as a static preview).
+
+| Service name | Root directory | Build | Start | Port |
+|---|---|---|---|---|
+| `galaxy-legal-backend` | `/backend` | `pip install -r requirements.txt` | `uvicorn main:app --host 0.0.0.0 --port $PORT` | `$PORT` |
+| `galaxy-legal-frontend` | `/frontend` | `npm install && npm run build` | `npx vite preview --host 0.0.0.0 --port $PORT` | `$PORT` |
+
+Both services share the same GitHub source (`Puzzlemanyyyyy/GALAXY-LEGAL`,
+branch `main`). Railway will only rebuild a service when files inside its
+root directory change.
+
+---
+
+## 2. Environment variables
+
+### 2.1 Backend (`galaxy-legal-backend` → Variables tab)
+
 ```
+# Supabase
+SUPABASE_URL=https://irzervhlczzzrydqfisn.supabase.co
+SUPABASE_ANON_KEY=<copy from /app/backend/.env>
+SUPABASE_SERVICE_ROLE_KEY=<copy — keep secret>
+SUPABASE_PROJECT_REF=irzervhlczzzrydqfisn
+SUPABASE_BUCKET=legal-documents
 
-(Si prefieres HTTPS: `git remote add origin https://github.com/<TU_USUARIO>/galaxy-legal.git`)
+# OpenAI
+OPENAI_API_KEY=<copy from /app/backend/.env>
+OPENAI_MODEL=gpt-4o
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_MONTHLY_BUDGET_USD=50
 
-## B) Railway — 2 servicios desde 1 repo
-
-1. **railway.app → New Project → Deploy from GitHub repo → galaxy-legal**
-2. Railway detecta el monorepo. Crea un primer servicio:
-   - **Settings → Service → Root Directory: `backend`**
-   - **Variables → pega todo lo que está en `.env.example` con valores reales**
-   - **Deploy** — Railway autodetecta FastAPI (Nixpacks) y `railway.json`
-3. **+ New → GitHub Repo → mismo repo** para el segundo servicio:
-   - **Root Directory: `frontend`**
-   - **Variables → pega solo las `VITE_*`**
-   - **Settings → Networking → Generate Domain**
-4. Copia el dominio público del backend y úsalo como `VITE_API_BASE_URL` en el frontend
-5. Copia el dominio público del frontend y añádelo a:
-   - `BACKEND_CORS_ORIGINS` en el backend
-   - **Authorized JS origins** en Google Cloud Console
-   - **Site URL** y **Redirect URLs** en Supabase Dashboard → Authentication → URL Configuration
-
-## C) Supabase — configurar Auth
-
-Dashboard del proyecto `galaxy-legal` (`irzervhlczzzrydqfisn`):
-
-1. **Authentication → Providers → Email** → activa "Enable Email provider" + "Magic Link"
-2. **Authentication → Providers → Google** → activa, pega `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`
-3. **Authentication → URL Configuration**:
-   - Site URL: `https://<tu-frontend>.up.railway.app`
-   - Redirect URLs: añade `http://localhost:5173/auth/callback` y `https://<tu-frontend>.up.railway.app/auth/callback`
-
-## D) Google Cloud — OAuth Client
-
-1. console.cloud.google.com → New Project `galaxy-legal-prod`
-2. APIs & Services → Library → habilita **Google Drive API** y **Google Picker API**
-3. APIs & Services → Credentials → Create Credentials → OAuth 2.0 Client ID
-   - Type: Web application
-   - Authorized JS origins: `http://localhost:5173`, `http://localhost:8000`, dominios Railway
-   - Authorized redirect URIs: añade tus 2 callback URLs
-4. Create Credentials → API Key → restringe a "Picker API"
-5. OAuth consent screen → External, scopes: `drive.file`, `userinfo.email`, `userinfo.profile`
-
-## E) Local dev
-
-```bash
 # Backend
-cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp ../.env.example .env  # rellena las variables
-uvicorn main:app --reload
+BACKEND_PORT=$PORT                     # Railway injects $PORT; do NOT hardcode
+BACKEND_CORS_ORIGINS=<frontend Railway URL>   # set in step 4 once known
 
-# Frontend (otra terminal)
-cd frontend
-npm install
-cp ../.env.example .env  # rellena VITE_*
-npm run dev
-# abre http://localhost:5173
+# Google Drive (optional — leave empty until you're ready)
+GOOGLE_CLIENT_ID=<from Google Cloud Console>
 ```
 
-## Costes mensuales esperados
+### 2.2 Frontend (`galaxy-legal-frontend` → Variables tab)
 
-| Item | $ / mes |
+```
+VITE_API_BASE_URL=<backend Railway URL>            # set in step 4 once known
+VITE_SUPABASE_URL=https://irzervhlczzzrydqfisn.supabase.co
+VITE_SUPABASE_ANON_KEY=<copy from /app/frontend/.env, public key>
+VITE_GOOGLE_CLIENT_ID=<same as backend>            # optional
+VITE_GOOGLE_PICKER_API_KEY=<from Google Cloud>     # optional
+```
+
+> **Never** commit `.env` files to the repo. The `.gitignore` already blocks
+> `.env`, `.env.*`, `*.env`, `*.pem`, `*.key`, `credentials.json`. Verified
+> that 21/21 commits in `main` history are clean.
+
+---
+
+## 3. First deploy (chicken-and-egg trick)
+
+Railway needs the public URL of one service to plug into the other's env vars.
+We solve this with a two-pass deploy:
+
+### 3.1 Pass 1 — provision both services with placeholder values
+
+1. Railway dashboard → **New** → **GitHub Repo** → select
+   `Puzzlemanyyyyy/GALAXY-LEGAL`. This creates `galaxy-legal-backend` by
+   default (or any name). Set:
+   - **Root Directory** → `/backend`
+   - **Custom Start Command** → `uvicorn main:app --host 0.0.0.0 --port $PORT`
+2. In the same project, **+ New Service** → same repo. This creates the
+   second service:
+   - **Service Name** → `galaxy-legal-frontend`
+   - **Root Directory** → `/frontend`
+   - **Custom Build Command** → `npm install && npm run build`
+   - **Custom Start Command** → `npx vite preview --host 0.0.0.0 --port $PORT`
+3. Paste the env vars from step 2 above. For `BACKEND_CORS_ORIGINS` and
+   `VITE_API_BASE_URL`, leave **placeholders** like `https://placeholder` —
+   Railway needs them set to deploy at all.
+4. Click **Deploy** on each service. The frontend will probably build OK
+   but fail at runtime (API unreachable). The backend will boot but reject
+   CORS preflight from the frontend. **Expected — we fix in pass 2.**
+
+### 3.2 Pass 2 — wire the real URLs
+
+Once both services have public domains generated by Railway:
+
+1. **Frontend service → Settings → Networking → Generate Domain.** Copy URL
+   (e.g. `https://galaxy-legal-frontend-production.up.railway.app`).
+2. **Backend service → Settings → Networking → Generate Domain.** Copy URL
+   (e.g. `https://galaxy-legal-backend-production.up.railway.app`).
+3. **Backend → Variables**: update `BACKEND_CORS_ORIGINS` → the **frontend
+   URL** (no trailing slash). Hit Save → backend redeploys.
+4. **Frontend → Variables**: update `VITE_API_BASE_URL` → the **backend
+   URL**. Hit Save → frontend redeploys (Vite needs a build for VITE_*
+   changes to take effect).
+5. Wait ~90 seconds for both rebuilds.
+
+---
+
+## 4. External integrations — update redirect/origins
+
+Once Railway URLs are known:
+
+### 4.1 Supabase Auth → URL Configuration
+
+`https://supabase.com/dashboard/project/irzervhlczzzrydqfisn/auth/url-configuration`
+
+- **Site URL** → frontend Railway URL.
+- **Redirect URLs** (Add URL) → keep both:
+  - `<frontend Railway URL>/auth/callback`
+  - `https://ba999ff0-b0a0-4c59-b346-fc3f4eaa7af6.preview.emergentagent.com/auth/callback`
+    (so the Emergent preview keeps working in parallel)
+  - `http://localhost:5173/auth/callback`
+- **Save changes**.
+
+### 4.2 Supabase Settings → Integrations
+
+- Confirm **Automatic branching** is **OFF** (it costs money outside the
+  Spend Cap and isn't needed for our flow).
+
+### 4.3 Google Cloud Console (only if Drive Picker is enabled)
+
+`https://console.cloud.google.com/apis/credentials` → click your OAuth
+client (`Galaxy Legal Web Client`):
+
+- **Authorized JavaScript origins** → add the frontend Railway URL (no
+  trailing slash, no path).
+- **Save**.
+
+`Credentials` → click your API key (`Galaxy Legal Picker Key`):
+
+- **Website restrictions** → add `<frontend Railway URL>/*`.
+- **Save**.
+
+---
+
+## 5. Post-deploy smoke test (manual)
+
+Open the **frontend Railway URL** in a fresh incognito window. Run through
+this checklist; each line takes <30 seconds.
+
+- [ ] Homepage `/` redirects to `/dashboard`, which then redirects to
+      `/login` because no session. ✅
+- [ ] Login with `e2e-test@galaxylegal.dev` (password fallback OR magic
+      link if you've configured the password provider).
+- [ ] Dashboard loads, Usage card renders. ✅
+- [ ] Click into an existing case (or create a new one). Documents column
+      visible on the left.
+- [ ] If `GOOGLE_CLIENT_ID` is set: "Importar de Google Drive" button
+      visible. If not: a grey notice instead. ✅
+- [ ] Upload a small PDF via drag & drop. Wait until `indexing → ready`.
+- [ ] Click **Ejecutar** on `Análisis inicial` workflow → wait for
+      `running → completed`. Cost should be $0.01-0.03.
+- [ ] Open the produced draft. Markers `[E:xxx]` clickable, evidences
+      panel populated.
+- [ ] **Aprobar** the draft → status flips to `approved`, content
+      becomes immutable.
+- [ ] **Exportar DOCX** → download the file → confirm
+      `[E:xxx]` markers render as superscript inside the `.docx`.
+- [ ] **Compartir** with `7d` expiry, watermark `Galaxy Legal · Demo`.
+      Open the public URL in a separate incognito tab → renders without
+      login, banner visible, evidences clickable, watermark in header.
+- [ ] `GET /api/usage/current` (with auth header) → returns
+      `{spent_usd, budget_usd, remaining_usd, run_count, month, over_budget}`
+      with `cost_usd > 0` and the current YYYY-MM in `month`.
+- [ ] Visit `/privacy` and `/terms` (no login required) → both render.
+
+If any step fails, the most common causes are:
+
+| Symptom | Most likely root cause |
 |---|---|
-| Supabase Pro org (compartido con Galaxy Pay) | ya pagado |
-| Supabase proyecto `galaxy-legal` | $10 |
-| Railway Hobby (2 servicios) | $5 (incluye $5 crédito) |
-| OpenAI API (uso real) | $30–80 |
-| Google Cloud | $0 |
-| **Total** | **~$45–95** |
+| Frontend "Network error" everywhere | `VITE_API_BASE_URL` still pointing at placeholder. Update + rebuild. |
+| `CORS error` in browser console | `BACKEND_CORS_ORIGINS` doesn't include exact frontend URL. Update + redeploy backend. |
+| Magic link redirects to localhost | `Site URL` not saved in Supabase. Re-apply step 4.1. |
+| Drive Picker shows "Drive not configured" | `GOOGLE_CLIENT_ID` not set on backend. Set + redeploy. |
+| Drive Picker fails with `idpiframe_initialization_failed` | Frontend Railway URL not in Google's "Authorized JS origins". Add + wait 5min for propagation. |
+
+---
+
+## 6. Custom domain (optional, recommended for prod demos)
+
+When you're ready to show this to a real law firm:
+
+1. Buy a domain (e.g. `galaxylegal.es`, ~12 €/year on a registrar like
+   Namecheap or Namebright).
+2. **Frontend service → Settings → Networking → Custom Domain → Add
+   `app.galaxylegal.es`.** Railway gives you a CNAME target.
+3. In your DNS panel, add the CNAME → wait DNS propagation (5-30 min).
+4. Railway auto-issues a Let's Encrypt cert. Done.
+5. Update Supabase, Google Cloud, frontend env (VITE_API_BASE_URL stays
+   the backend URL — only the frontend gets a fancier domain).
+
+The first impression of `app.galaxylegal.es` vs
+`galaxy-legal-frontend-production.up.railway.app` is night and day for a
+B2B audience.
+
+---
+
+## 7. Roll-back plan
+
+Railway keeps every deploy. If a new push breaks production:
+
+1. Service → **Deployments** tab.
+2. Click the previous good deploy → **"Redeploy"**. Live in ~30 seconds.
+
+The DB itself is shared between preview and production (same Supabase
+project). If a migration ever corrupts data, **Supabase has automatic
+daily backups** on Pro plan — restore from there is the only safe path.
+
+---
+
+## 8. Cost expectations
+
+| Component | Plan | Monthly |
+|---|---|---|
+| Railway backend service | Hobby (1GB RAM) | ~$5 base + $0.000231/GB-hr ≈ ~$5-12 |
+| Railway frontend service | Hobby (256MB) | ~$5-7 |
+| Supabase | Pro (current) | $25 |
+| OpenAI | usage-based, capped at 50 USD | ≤$50 (current cap, raise as needed) |
+| Domain | Namecheap | ~$1 |
+| **Total realistic** | | **~$80-95/month** |
+
+Railway charges are pay-as-you-go above the included base; if a backend
+worker is idle most of the day, expect closer to $5-7. Frontend is
+near-static and very cheap.
+
+---
+
+## 9. Quick diff — what changed in this release vs Phase 2(b)
+
+- ✅ Drive Picker (frontend + backend, requires Google credentials).
+- ✅ `/privacy` and `/terms` pages.
+- ✅ Spanish user manual at `docs/MANUAL_USUARIO.md`.
+- ✅ DOCX evidence markers render as **bracketed superscript** (was: grey inline text).
+- ✅ `BACKEND_CORS_ORIGINS` no longer hardcodes the Emergent preview URL.
+- ✅ `JWT_SECRET="change-me"` removed from defaults.
+- ✅ `0003_align_to_live.sql` reconciles 0001 with the production schema.
+- ✅ `.env.example` shipped for both backend and frontend.
+
+Anti-fantasma logic, citation validator and workflow definitions were
+**not touched** — those are audited and stable.

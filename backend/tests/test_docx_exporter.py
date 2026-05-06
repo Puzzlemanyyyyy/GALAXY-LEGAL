@@ -35,3 +35,37 @@ def test_docx_handles_empty_lines():
     # Ensure no exception and at least the two bullets are rendered
     joined = "\n".join(p.text for p in doc.paragraphs)
     assert "one" in joined and "two" in joined
+
+
+def test_docx_evidence_marker_is_superscript_with_brackets():
+    """[E:xxx] markers must render as superscript and keep the bracketed shape.
+
+    This is the contract with both lawyers (the marker should look like a
+    footnote pointer, not a low-contrast inline tag) and with downstream
+    tooling (any plain-text extraction of the docx must still surface the
+    `[E:xxx]` pattern verbatim).
+    """
+    md = "Hechos: el demandado incumplió la cláusula [E:e001] el día 15.\n"
+    blob = markdown_to_docx("Title", md)
+    doc = Document(io.BytesIO(blob))
+
+    # Plain-text extraction MUST still contain the bracketed marker verbatim.
+    flat = "\n".join(p.text for p in doc.paragraphs)
+    assert "[E:e001]" in flat, (
+        "Evidence marker lost its bracketed shape on render. "
+        "Tools doing plain-text grep on the .docx will break."
+    )
+
+    # Find the run that holds the marker and check its formatting.
+    found = False
+    for para in doc.paragraphs:
+        for run in para.runs:
+            if run.text == "[E:e001]":
+                assert run.font.superscript is True, "marker run is not superscript"
+                # Smaller than the body size (which defaults to 11pt → marker should be 7-8pt)
+                assert run.font.size is not None and run.font.size.pt <= 8
+                found = True
+                break
+        if found:
+            break
+    assert found, "Did not locate the evidence marker run in the document"

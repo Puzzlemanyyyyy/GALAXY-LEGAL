@@ -76,6 +76,27 @@ AI-powered legal workspace para despachos y equipos in-house. Stack:
 
 ## Pendiente
 
+### 2026-05-XX · Iteration 3 — Issue cleanup + Railway deploy ready
+**SQL drift reconciled** via new idempotent `supabase/0003_align_to_live.sql` (~210 líneas). Aplica RENAME COLUMN + ENUMs (`workflow_type`, `draft_status`) + DROPs de columnas legacy. Fresh project: 0001+0002+0003 reproduce el estado vivo. Live DB: 0003 es no-op por los guards `do $$ ... $$`.
+
+**`backend/config.py` saneado**: eliminado `JWT_SECRET="change-me"`, eliminado `GOOGLE_REDIRECT_URI`, `BACKEND_CORS_ORIGINS` reset a localhost-only por defecto (producción debe setear vía env), `SUPABASE_PROJECT_REF` ya no hardcoded.
+
+**`.env.example` añadidos** para backend y frontend (no existían). Frontend ships solo `VITE_*` (no más `REACT_APP_*` legacy que confundía).
+
+**DOCX export**: marcadores `[E:xxx]` ahora bracketed superscript (font.superscript=True, ≤8pt). Test nuevo `test_docx_evidence_marker_is_superscript_with_brackets`. Lint clean.
+
+**`docs/DEPLOY.md` reescrito** con receta deploy Railway en dos pases (placeholder → real URLs), env vars listas para copy-paste, smoke checklist post-deploy, common issues, rollback plan, custom domain steps, costes esperados ($80-95/mes).
+
+**Smoke test contra preview**: 9/9 verde — health, password login, drive picker-config (correctamente `configured=false`), usage shape, public draft sin auth, /privacy y /terms render (verificados con Playwright porque el HTML inicial Vite no tiene contenido pre-hidratación), list cases, exported_at expuesto.
+
+**Pytest**: 29/29 deterministas verde post-changes. Los 2 e2e contra preview live (test_phase2b_e2e + test_e2e_flow) siguen flaky por network — no son regresiones nuevas.
+
+**Sin tocar**: `citation_validator.py`, `workflows/*`, `0002_phase2b.sql` (instrucciones explícitas).
+
+**Bloqueado en usuario**: ejecutar deploy Railway siguiendo DEPLOY.md (cuenta + UI propia, agente sin acceso). Smoke test contra Railway tras deploy.
+
+---
+
 ### 2026-05-04 · Fase 2(c) avanzada + páginas legales + manual de usuario
 **Drive Picker (frontend + backend listos, esperando credenciales del usuario)**:
 - `frontend/src/components/DrivePicker.jsx` — carga GIS (`accounts.google.com/gsi/client`) y gapi (`apis.google.com/js/api.js`) idempotentemente. Usa `google.accounts.oauth2.initTokenClient` con scope `drive.file` (privacy-first). Picker configurado con `setSelectFolderEnabled(false) + setIncludeFolders(false) + ViewId.DOCS + DocsViewMode.LIST` para forzar selección individual de archivos. Handler de `DRIVE_TOKEN_EXPIRED` mid-import: reabre el picker con `prompt='consent'` y reintenta SOLO los pendientes (no double-import). Si el backend no tiene `GOOGLE_CLIENT_ID`, renderiza un aviso en gris en lugar del botón.

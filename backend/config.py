@@ -15,7 +15,8 @@ class Settings(BaseSettings):
     SUPABASE_URL: str = ""
     SUPABASE_ANON_KEY: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = ""
-    SUPABASE_PROJECT_REF: str = "irzervhlczzzrydqfisn"
+    SUPABASE_PROJECT_REF: str = ""           # derived from SUPABASE_URL when blank
+    SUPABASE_JWT_SECRET: str = ""            # only required for self-verification flows; Supabase verifies tokens by default
 
     # OpenAI
     OPENAI_API_KEY: str = ""
@@ -23,19 +24,16 @@ class Settings(BaseSettings):
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_MONTHLY_BUDGET_USD: int = 50
 
-    # Google
+    # Google (Drive Picker — client-side OAuth flow)
     GOOGLE_CLIENT_ID: str = ""
-    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""           # not used by the GIS flow; keep empty unless you switch to server-side OAuth
     GOOGLE_PICKER_API_KEY: str = ""
-    GOOGLE_REDIRECT_URI: str = "http://localhost:8000/auth/google/callback"
 
     # Backend
     BACKEND_PORT: int = 8001
-    BACKEND_CORS_ORIGINS: str = (
-        "http://localhost:5173,http://localhost:3000,"
-        "https://ba999ff0-b0a0-4c59-b346-fc3f4eaa7af6.preview.emergentagent.com"
-    )
-    JWT_SECRET: str = "change-me"
+    # Default to localhost dev only. Production deployments MUST set this
+    # env var explicitly with the public frontend domain (Railway, custom DNS).
+    BACKEND_CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
     # Limits
     MAX_DOCUMENT_SIZE_MB: int = 25

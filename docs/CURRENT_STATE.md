@@ -259,6 +259,15 @@ Before clicking **"Save to GitHub"** in the Emergent chat, confirm:
 - OG image preview (Fase 2d polish)
 - Multi-tenant org/team UI
 
+### Newly included (2026-05-XX, iteration 3)
+
+- ✅ `supabase/0003_align_to_live.sql` — idempotent reconciliation of 0001 → live schema (column renames, enum types, dropped legacy fields). Brings any clean project to production shape.
+- ✅ `backend/config.py` cleanup: dropped `JWT_SECRET="change-me"` and `GOOGLE_REDIRECT_URI`; `BACKEND_CORS_ORIGINS` no longer hardcodes the preview URL; `SUPABASE_PROJECT_REF` no longer hardcoded.
+- ✅ `backend/.env.example` and `frontend/.env.example` shipped (didn't exist).
+- ✅ DOCX evidence markers render as **bracketed superscript** (was: low-contrast inline). New test `test_docx_evidence_marker_is_superscript_with_brackets`.
+- ✅ `docs/DEPLOY.md` rewritten — full Railway recipe with two-pass deploy, env var blocks, smoke checklist, rollback plan.
+- ✅ `test_reports/iteration_3.md` — full report of iteration 3.
+
 ### Newly included (2026-05-04)
 
 - ✅ Drive Picker frontend (`components/DrivePicker.jsx`) with idempotent script loader, GIS token client, scope `drive.file`, folder selection blocked, mid-import re-auth flow.
