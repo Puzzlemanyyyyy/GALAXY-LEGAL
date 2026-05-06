@@ -76,6 +76,16 @@ AI-powered legal workspace para despachos y equipos in-house. Stack:
 
 ## Pendiente
 
+### 2026-05-04 · Fase 2(b) — Cierre final + LoginPage refinado
+- `LoginPage.jsx` limpiado: eliminado botón "Continuar con Google" (era scaffolding, provider Supabase nunca habilitado). Añadido **fallback de login por contraseña** vía toggle "¿Tienes contraseña?" — usa `supabase.auth.signInWithPassword`. Permite entrar con las credenciales de `test_credentials.md` sin depender de que la URL Configuration de Supabase esté aplicada.
+- Smoke E2E verificado: login con contraseña → redirect a `/dashboard` → token en localStorage → app renderiza.
+- `docs/CURRENT_STATE.md` actualizado con ready-to-push checklist, acciones del usuario post-push (auto-deploy OFF en Railway + Supabase URL Configuration save + Automatic branching OFF).
+- 45/45 pytest backend verde, lint JS/Python limpio.
+
+**Stop confirmado en Fase 2(b)**. El usuario eligió opción A: cerrar 2(b) → pulsar Save to GitHub → siguiente sesión = Fase 2(c) Drive + Railway. Fase 3 (RAG legal BOE/CENDOJ) queda después de Fase 2(c), con budget aprobado explícitamente.
+
+---
+
 ### 2026-04-30 · Fase 2(b) — E2E verificado + refinado (iteration_2.json + refix)
 Testing agent validó el suite de 6 puntos pedido por el usuario:
 - `civil_demand` E2E → demanda con 5 hechos numerados + [E:xxx] en cada uno + petitum + otrosíes, 5 evidencias `verified=true`, coste $0.0212.

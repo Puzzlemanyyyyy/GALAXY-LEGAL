@@ -11,6 +11,7 @@
 
 ### Authentication
 - Supabase magic-link login via email (LoginPage)
+- **Password fallback** for testing / dev: toggle "¿Tienes contraseña?" on LoginPage reveals a password input. Uses `supabase.auth.signInWithPassword` against the Supabase built-in password provider. Works even if Site URL/Redirect URLs are not yet configured.
 - Password grant for automated tests (`/auth/v1/token?grant_type=password`)
 - ProtectedRoute + AuthCallback wired
 - Session persisted in `localStorage` under `sb-irzervhlczzzrydqfisn-auth-token`
@@ -230,6 +231,39 @@ pytest tests/ -q -k 'not TestFullFlow'  # unit-only, no OpenAI cost
    - Redirect URLs: `https://<railway-frontend-domain>/auth/callback`
 6. Update Google Cloud Console OAuth Client → Authorized JS origins: add `https://<railway-frontend-domain>`.
 7. Smoke test: open Railway frontend, magic-link login, create case, upload doc, run `civil_demand`, approve, export DOCX, share public link.
+
+---
+
+## Ready-to-push checklist (2026-05-04)
+
+Before clicking **"Save to GitHub"** in the Emergent chat, confirm:
+
+- [x] Backend: 45/45 pytest green (`cd backend && pytest tests/ -q`)
+- [x] Frontend lint: no issues (`LoginPage.jsx`, `PublicDraftPage.jsx`, `DashboardPage.jsx`, etc.)
+- [x] LoginPage password fallback: toggle "¿Tienes contraseña?" added for dev/test access
+- [x] Google Sign-In button removed from LoginPage (was stale scaffolding, Supabase provider was never enabled)
+- [x] `services/mappers.py:draft_to_api` exposes `exported_at`
+- [x] Evidence markers in PublicDraftPage are clickable (`<button data-testid="evidence-marker-…">` with scroll + 1.5s amber highlight)
+- [x] `logger.warning` on `insert_draft_atomic` RPC fallback (runs.py + drafts.py)
+- [x] `sharing.py::resolve_public_draft` wraps `.single()` calls in try/except → 404 clean on orphaned drafts
+- [x] Persistent 7-day demo share token live and verified:
+  `https://ba999ff0-b0a0-4c59-b346-fc3f4eaa7af6.preview.emergentagent.com/public/drafts/4a1d042b-9f35-4cc0-a98a-1cde263be263`
+- [x] `docs/CURRENT_STATE.md` up to date
+
+### What's NOT included in this push (intentional backlog)
+
+- Google Drive Picker (Fase 2c) — requires user's Google Cloud OAuth credentials
+- Railway deploy configuration (Fase 2c) — requires Railway account + env vars setup in Railway panel
+- BOE / CENDOJ legal-corpus RAG (Fase 3a) — requires budget approval (~$400 one-shot + ~$30/mo hosting) and external corpus access
+- Eur-Lex / vLex / commercial legal DBs (Fase 3b/c)
+- OG image preview, /privacy, /terms (Fase 2d polish)
+
+### After the push, the user must
+
+1. Verify on `github.com/Puzzlemanyyyyy/GALAXY-LEGAL` that the 13 key files are present (see list in finish summary).
+2. In Railway: **turn OFF auto-deploy** on the connected service until Fase 2c starts (otherwise Railway will try to build without env vars and fail silently).
+3. Finish applying **Supabase URL Configuration** (Site URL + 3 Redirect URLs) — the form was open but unsaved in the last screenshot. Needed for the magic-link path to work end-to-end.
+4. In Supabase Settings → Integrations: consider **disabling "Automatic branching"** — currently ON and triggers on every PR, costs money outside your Spend Cap.
 
 ---
 
