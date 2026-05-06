@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, FileText, Loader2, RefreshCcw, Trash2, Sparkles, ShieldCheck, AlertTriangle, History } from 'lucide-react'
 import { api } from '../lib/api'
 import DocumentUpload from '../components/DocumentUpload'
+import DrivePicker from '../components/DrivePicker'
 import WorkflowCard from '../components/WorkflowCard'
 
 const TABS = [
@@ -76,6 +77,7 @@ export default function CasePage() {
         {/* Left rail: documents */}
         <aside className="col-span-12 lg:col-span-3 space-y-4">
           <DocumentUpload caseId={caseId} onUploaded={() => loadAll()} />
+          <DrivePicker caseId={caseId} onImported={() => loadAll()} />
           <div className="rounded-xl border border-ink-200 bg-white">
             <div className="px-4 py-3 border-b border-ink-200 flex items-center justify-between">
               <div className="text-sm font-medium text-ink-900">Documentos</div>

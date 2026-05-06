@@ -252,11 +252,20 @@ Before clicking **"Save to GitHub"** in the Emergent chat, confirm:
 
 ### What's NOT included in this push (intentional backlog)
 
-- Google Drive Picker (Fase 2c) — requires user's Google Cloud OAuth credentials
+- ~~Google Drive Picker~~ ✅ **Frontend + backend code is now committed** (2026-05-04). Activates the moment the user adds `GOOGLE_CLIENT_ID` + `GOOGLE_PICKER_API_KEY` to `.env`. No further code needed.
 - Railway deploy configuration (Fase 2c) — requires Railway account + env vars setup in Railway panel
 - BOE / CENDOJ legal-corpus RAG (Fase 3a) — requires budget approval (~$400 one-shot + ~$30/mo hosting) and external corpus access
 - Eur-Lex / vLex / commercial legal DBs (Fase 3b/c)
-- OG image preview, /privacy, /terms (Fase 2d polish)
+- OG image preview (Fase 2d polish)
+- Multi-tenant org/team UI
+
+### Newly included (2026-05-04)
+
+- ✅ Drive Picker frontend (`components/DrivePicker.jsx`) with idempotent script loader, GIS token client, scope `drive.file`, folder selection blocked, mid-import re-auth flow.
+- ✅ Drive backend (`services/drive.py` + `routes/drive.py`) with `aud` validation against tokeninfo, Google-native export mapping (Docs→docx, Sheets→xlsx, Slides→pptx), partial-progress response on `DRIVE_TOKEN_EXPIRED`.
+- ✅ 7 new unit tests in `tests/test_drive_service.py`.
+- ✅ `/privacy` and `/terms` static pages (RGPD + responsibility disclaimer template).
+- ✅ `docs/MANUAL_USUARIO.md` — Spanish user manual, 10 sections.
 
 ### After the push, the user must
 

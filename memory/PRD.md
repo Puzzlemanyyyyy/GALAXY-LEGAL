@@ -76,6 +76,32 @@ AI-powered legal workspace para despachos y equipos in-house. Stack:
 
 ## Pendiente
 
+### 2026-05-04 · Fase 2(c) avanzada + páginas legales + manual de usuario
+**Drive Picker (frontend + backend listos, esperando credenciales del usuario)**:
+- `frontend/src/components/DrivePicker.jsx` — carga GIS (`accounts.google.com/gsi/client`) y gapi (`apis.google.com/js/api.js`) idempotentemente. Usa `google.accounts.oauth2.initTokenClient` con scope `drive.file` (privacy-first). Picker configurado con `setSelectFolderEnabled(false) + setIncludeFolders(false) + ViewId.DOCS + DocsViewMode.LIST` para forzar selección individual de archivos. Handler de `DRIVE_TOKEN_EXPIRED` mid-import: reabre el picker con `prompt='consent'` y reintenta SOLO los pendientes (no double-import). Si el backend no tiene `GOOGLE_CLIENT_ID`, renderiza un aviso en gris en lugar del botón.
+- `backend/services/drive.py` — `validate_access_token` llama `https://oauth2.googleapis.com/tokeninfo`, verifica `aud == GOOGLE_CLIENT_ID` (defense vs confused-deputy) + scope `drive.file`. `download_drive_file` distingue Google-native (`/export?mimeType=docx|xlsx|pptx`) vs binario (`?alt=media`). Mid-import 401 → `DriveTokenError(DRIVE_TOKEN_EXPIRED)` con `partial=DriveImportResult(imported, pending, errors)` adjunta para que la ruta lo devuelva.
+- `backend/routes/drive.py::POST /api/drive/import` — devuelve 503 `DRIVE_NOT_CONFIGURED` si falta env var, 401 `TOKEN_VALIDATION_FAILED`, 403 `DRIVE_TOKEN_EXPIRED` con `{imported, pending}`, 201 con `{imported, errors, pending}` en caso normal. Audit log `drive.import` con resumen.
+- 7/7 tests unitarios nuevos en `tests/test_drive_service.py` (mockean tokeninfo + Drive API): aud mismatch → 401, scope missing → 401, Google-native → /export, binario → ?alt=media, 401 mid-import → DRIVE_TOKEN_EXPIRED.
+
+**Páginas legales (RGPD/comercial)**:
+- `frontend/src/pages/PrivacyPage.jsx` — política de privacidad RGPD-compliant en español: responsable, datos tratados, finalidad y base legal, plazos de conservación, encargados (Supabase, OpenAI, Google, Railway), derechos ARSULIPO, no decisiones automatizadas. Plantilla con `[Nombre del titular]` para que el usuario rellene.
+- `frontend/src/pages/TermsPage.jsx` — términos y condiciones: aceptación, descripción, **cláusula clave de "Galaxy Legal NO presta servicios jurídicos"** (responsabilidad deontológica del abogado), obligaciones del usuario, propiedad intelectual, ley aplicable.
+- Rutas públicas `/privacy` y `/terms` en `main.jsx`. Verificadas en preview.
+
+**Manual de usuario**:
+- `docs/MANUAL_USUARIO.md` — 10 secciones, ~600 líneas, en español. Cubre desde "Acceder por primera vez" hasta el resumen de 1 minuto. Tabla de workflows con tiempo y coste. Estados de ejecución (especial atención a `needs_human` como feature, no bug). Garantías técnicas vendibles + lista honesta de lo que NO hace todavía.
+
+**Stop confirmado en Fase 2(c) — esperando del usuario**:
+- Pulsar "Save to GitHub".
+- Crear OAuth Client + API Key en Google Cloud Console y meter `GOOGLE_CLIENT_ID` + `GOOGLE_PICKER_API_KEY` en `.env` (frontend y backend).
+- Cuando esté: Drive Picker funciona inmediatamente sin tocar más código.
+- Railway deploy queda pendiente (necesita repo actualizado en GitHub + cuenta Railway con env vars).
+- Fase 3 (BOE/CENDOJ RAG) sigue requiriendo aprobación de gasto OpenAI (~$400 one-shot) antes de ejecutar.
+
+**Tests post-cambios**: 28/28 verde en suite determinista. Los e2e que tocan el preview URL (test_phase2b_e2e + test_e2e_flow + test_versioning) son flaky por timeouts de red contra Emergent preview, no por bugs nuevos. Lint JS/Python limpio.
+
+---
+
 ### 2026-05-04 · Fase 2(b) — Cierre final + LoginPage refinado
 - `LoginPage.jsx` limpiado: eliminado botón "Continuar con Google" (era scaffolding, provider Supabase nunca habilitado). Añadido **fallback de login por contraseña** vía toggle "¿Tienes contraseña?" — usa `supabase.auth.signInWithPassword`. Permite entrar con las credenciales de `test_credentials.md` sin depender de que la URL Configuration de Supabase esté aplicada.
 - Smoke E2E verificado: login con contraseña → redirect a `/dashboard` → token en localStorage → app renderiza.

@@ -70,6 +70,11 @@ export const api = {
 
   // usage
   getUsage:     () => request('/usage/current'),
+
+  // drive
+  getDrivePickerConfig: () => request('/drive/picker-config'),
+  importFromDrive: (case_id, drive_files, access_token) =>
+    request('/drive/import', { method: 'POST', body: { case_id, drive_files, access_token } }),
 }
 
 // Public endpoint (no auth)
