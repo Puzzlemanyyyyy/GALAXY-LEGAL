@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
     # Limits
-    MAX_DOCUMENT_SIZE_MB: int = 25
+    MAX_DOCUMENT_SIZE_MB: int = 100
     MAX_DOCUMENTS_PER_CASE: int = 200
 
     @property

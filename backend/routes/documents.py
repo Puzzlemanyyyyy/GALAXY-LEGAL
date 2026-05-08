@@ -9,6 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 
+from config import settings
 from services import audit
 from services.auth import get_current_user
 from services.chunker import chunk_text
@@ -19,6 +20,9 @@ from services.supabase_client import get_supabase_admin, get_user_client
 
 
 router = APIRouter()
+
+
+MAX_BYTES = settings.MAX_DOCUMENT_SIZE_MB * 1024 * 1024
 
 
 @router.get("")
@@ -51,9 +55,22 @@ async def upload_document(
     user: dict = Depends(get_current_user),
 ):
     """Upload a document, dedupe by SHA-256, store in Supabase Storage, queue indexing."""
+    # Cheap pre-check: reject obvious oversize via Content-Length before reading.
+    declared = getattr(file, "size", None)
+    if declared is not None and declared > MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large: {declared // (1024*1024)} MB exceeds the {settings.MAX_DOCUMENT_SIZE_MB} MB limit",
+        )
     raw = await file.read()
     if not raw:
         raise HTTPException(400, "Empty file")
+    # Hard ceiling — defends when Content-Length is missing or lied about.
+    if len(raw) > MAX_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large: {len(raw) // (1024*1024)} MB exceeds the {settings.MAX_DOCUMENT_SIZE_MB} MB limit",
+        )
     digest = hashlib.sha256(raw).hexdigest()
 
     user_sb = get_user_client(user["token"])

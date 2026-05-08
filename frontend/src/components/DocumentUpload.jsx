@@ -40,7 +40,7 @@ export default function DocumentUpload({ caseId, onUploaded }) {
       >
         <UploadCloud className="w-7 h-7 text-ink-600 mx-auto mb-2" />
         <div className="text-sm text-ink-900 font-medium">Subir documento</div>
-        <div className="text-xs text-ink-600 mt-1">Arrastra PDF, DOCX o TXT (máx. 25 MB) o haz clic.</div>
+        <div className="text-xs text-ink-600 mt-1">Arrastra PDF, DOCX o TXT (máx. 100 MB) o haz clic.</div>
         <input
           data-testid="document-upload-input"
           ref={inputRef}
