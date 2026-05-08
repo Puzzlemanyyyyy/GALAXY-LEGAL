@@ -90,10 +90,15 @@ export default function CasePage() {
                   <FileText className="w-4 h-4 text-ink-600 mt-0.5 shrink-0" />
                   <div className="min-w-0 flex-1">
                     <div className="text-ink-900 truncate">{d.filename}</div>
-                    <div className="text-xs text-ink-600 mt-0.5 flex items-center gap-2">
+                    <div className="text-xs text-ink-600 mt-0.5 flex items-center gap-2 flex-wrap">
                       <DocStatus status={d.status} error={d.index_error} />
                       {d.pages_count ? <span>· {d.pages_count} pág.</span> : null}
                     </div>
+                    {d.status === 'failed' && d.index_error && (
+                      <div data-testid={`document-error-${d.id}`} className="mt-1 text-[11px] leading-snug text-rose-700 bg-rose-50 border border-rose-200 rounded p-1.5 break-words">
+                        {summariseIndexError(d.index_error)}
+                      </div>
+                    )}
                   </div>
                   <button data-testid={`document-reindex-${d.id}`} title="Reindexar" onClick={() => api.reindexDoc(d.id).then(loadAll)} className="text-ink-600 hover:text-brand-700">
                     <RefreshCcw className="w-3.5 h-3.5" />
@@ -182,8 +187,34 @@ export default function CasePage() {
 function DocStatus({ status, error }) {
   if (status === 'ready')    return <span className="inline-flex items-center gap-1 text-emerald-700"><ShieldCheck className="w-3 h-3" /> indexado</span>
   if (status === 'indexing') return <span className="inline-flex items-center gap-1 text-brand-700"><Loader2 className="w-3 h-3 animate-spin" /> indexando…</span>
-  if (status === 'failed')   return <span className="inline-flex items-center gap-1 text-rose-700" title={error || ''}><AlertTriangle className="w-3 h-3" /> error</span>
+  if (status === 'failed')   return <span className="inline-flex items-center gap-1 text-rose-700" title={error || ''}><AlertTriangle className="w-3 h-3" /> error de indexación</span>
   return <span className="text-ink-600">{status}</span>
+}
+
+/**
+ * Convert a raw backend index_error blob into a short, actionable message.
+ * The full payload (often a vendor stack trace) stays available via tooltip
+ * on DocStatus; here we surface the gist so a non-technical user knows what
+ * to try next.
+ */
+function summariseIndexError(raw) {
+  if (!raw) return 'Error desconocido — pulsa Reindexar para reintentar.'
+  const s = String(raw)
+  if (/Incorrect API key|invalid_api_key|401/.test(s) && /openai/i.test(s)) {
+    return 'La clave de OpenAI configurada en el servidor es incorrecta. Avisa al administrador.'
+  }
+  if (/rate.?limit|429/.test(s)) {
+    return 'OpenAI rechazó la solicitud por límite de uso. Intenta de nuevo en unos minutos (Reindexar).'
+  }
+  if (/insufficient_quota|exceeded_quota/i.test(s)) {
+    return 'La cuenta de OpenAI del servicio se ha quedado sin saldo. Avisa al administrador.'
+  }
+  if (/empty|no text|extract/i.test(s)) {
+    return 'No se pudo extraer texto del documento. Asegúrate de que el PDF no es escaneado sin OCR.'
+  }
+  // Fallback: surface the first line, capped.
+  const firstLine = s.split('\n')[0].slice(0, 220)
+  return firstLine + (s.length > 220 ? '…' : '')
 }
 
 function RunStatus({ status }) {
